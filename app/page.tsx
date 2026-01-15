@@ -4,89 +4,120 @@ import React, { useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { toPng } from "html-to-image";
 
-/* ----------------------------- Instructor Match ---------------------------- */
+/* ----------------------------- Types ----------------------------- */
 
-type ParentType = "supersonic" | "high_maintenance" | "extra_attention" | "budget";
 type AnswerKey = "A" | "B" | "C" | "D";
-type InternalCode = "A" | "B" | "C" | "D";
-
+type ParentType = "supersonic" | "high_maintenance" | "extra_attention" | "budget";
 type MatchState = { q1?: AnswerKey; q2?: AnswerKey; q3?: AnswerKey; q4?: AnswerKey };
 
-const MATCH_MAP: Record<AnswerKey, ParentType> = {
+type InstructorType = "structured" | "coaching" | "free_spirit" | "patient";
+
+type Stage = "landing" | "match" | "age" | "skills" | "endurance" | "comments" | "results";
+type ContactMethod = "email" | "phone" | "";
+
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Saturday", "Sunday"] as const;
+
+const TIME_WINDOWS = [
+  "Morning (9am–12pm, Weekends Only)",
+  "Early Afternoon (12pm–4pm, All Days)",
+  "Afternoon (4pm–6pm, Weekdays Only)",
+  "Evening (6pm–8pm, Weekdays Only)",
+  "Flexible",
+] as const;
+
+const LOCATIONS = [
+  "SwimLabs Westchester",
+  "SwimLabs The Woodlands",
+  "SafeSplash Riverdale",
+  "SafeSplash Santa Monica",
+  "SafeSplash Torrance",
+  "SafeSplash Summerlin",
+] as const;
+
+type LocationName = (typeof LOCATIONS)[number];
+
+const LOCATION_PORTAL: Record<LocationName, string> = {
+  "SwimLabs Westchester": "https://portal.iclasspro.com/westchesterny/classes",
+  "SafeSplash Riverdale": "https://portal.iclasspro.com/yonkersriverdaleny/classes",
+  "SwimLabs The Woodlands": "https://portal.iclasspro.com/thewoodlandsnorthtx/classes",
+  "SafeSplash Santa Monica": "https://portal.iclasspro.com/santamonicasunsetparkca/classes",
+  "SafeSplash Torrance": "https://portal.iclasspro.com/torrancedelamoca/classes",
+  "SafeSplash Summerlin": "https://portal.iclasspro.com/lasvegassummerlinnv/classes",
+};
+
+const LOCATION_CONTACT: Record<LocationName, { brand: "SwimLabs" | "SafeSplash"; phone: string; email: string }> = {
+  "SwimLabs Westchester": { brand: "SwimLabs", phone: "914-800-7946", email: "westchester-ny@swimlabs.com" },
+  "SwimLabs The Woodlands": { brand: "SwimLabs", phone: "(281) 688-5993", email: "the-woodlands-north-tx@swimlabs.com" },
+  "SafeSplash Riverdale": { brand: "SafeSplash", phone: "914-215-1683", email: "yonkers-riverdale-ny@safesplash.com" },
+  "SafeSplash Santa Monica": { brand: "SafeSplash", phone: "424-282-4301", email: "santa-monica-sunset-park-ca@safesplash.com" },
+  "SafeSplash Torrance": { brand: "SafeSplash", phone: "424-282-4304", email: "torrance-del-amo-ca@safesplash.com" },
+  "SafeSplash Summerlin": { brand: "SafeSplash", phone: "702-291-1937", email: "las-vegas-summerlin-nv@safesplash.com" },
+};
+
+/* -------------------------- Customer → Internal Code -------------------------- */
+
+const ANSWER_TO_PARENT: Record<AnswerKey, ParentType> = {
   A: "supersonic",
   B: "high_maintenance",
   C: "extra_attention",
   D: "budget",
 };
 
-/**
- * Customer-facing: show instructor persona they match with.
- * Internal: only show letter code + weighted scores.
- *
- * Mapping based on your matching guide:
- * - Supersonic -> Coaching Carly/Cameron OR Structured Sam/Steven
- * - High Maintenance -> Structured Sam/Steven
- * - Extra Attention -> Patient Pat/Paul
- * - Budget -> Free Spirit Franny/Frank OR Patient Pat/Paul
- *
- * We’ll pick a primary + alternate where helpful.
- */
-type InstructorPersonaKey = "structured" | "coaching" | "free_spirit" | "patient";
+const PARENT_TO_LETTER: Record<ParentType, "A" | "B" | "C" | "D"> = {
+  supersonic: "A",
+  high_maintenance: "B",
+  extra_attention: "C",
+  budget: "D",
+};
 
-const INSTRUCTOR_PERSONAS: Record<
-  InstructorPersonaKey,
-  { display: string; tagline: string; bullets: string[] }
+const INTERNAL_OPS_COPY: Record<"A" | "B" | "C" | "D", { label: string; ops: string }> = {
+  A: { label: "Supersonic", ops: "Time/results driven. Needs progress checkpoints." },
+  B: { label: "High Maintenance", ops: "Wants structure, explanations, best-of-best." },
+  C: { label: "Extra Attention", ops: "Emotionally invested. Instructor consistency matters." },
+  D: { label: "Budget", ops: "Cost-sensitive. Needs value + visible progress fast." },
+};
+
+/* -------------------------- Customer → Instructor Match -------------------------- */
+
+const INSTRUCTOR_DISPLAY: Record<
+  InstructorType,
+  { name: string; summary: string; bullets: string[] }
 > = {
   structured: {
-    display: "Structured Sam / Steven",
-    tagline: "Clear plan, steady progress, consistent routines.",
-    bullets: ["Consistent structure", "Clear expectations", "Step-by-step progression"],
+    name: "Structured Sam / Steven",
+    summary:
+      "Clear structure, consistent routines, and steady progress. Great when you want a predictable lesson flow and a plan you can trust.",
+    bullets: ["Consistent routine", "Clear skill progression", "Calm, steady coaching"],
   },
   coaching: {
-    display: "Coaching Carly / Cameron",
-    tagline: "Goal-driven coaching with strong momentum and milestones.",
-    bullets: ["Progress checkpoints", "Strong coaching energy", "Fast feedback and goals"],
+    name: "Coaching Carly / Cameron",
+    summary:
+      "Goal-driven coaching that keeps things moving. Great when you want fast feedback, milestones, and momentum.",
+    bullets: ["Motivating + efficient", "Progress checkpoints", "Challenge-ready when appropriate"],
   },
   free_spirit: {
-    display: "Free Spirit Franny / Frank",
-    tagline: "Playful confidence-building with comfort-first flow.",
-    bullets: ["Fun and flexible", "Comfort first", "Keeps it light and positive"],
+    name: "Free Spirit Franny / Frank",
+    summary:
+      "Playful, light, and confidence-building through fun. Great when your swimmer thrives with relaxed energy and joy-first lessons.",
+    bullets: ["Fun-first engagement", "Comfort-driven progress", "Keeps it light and positive"],
   },
   patient: {
-    display: "Patient Pat / Paul",
-    tagline: "Warm, patient encouragement with reassurance and confidence-building.",
-    bullets: ["Reassuring approach", "Confidence building", "Great with hesitant swimmers"],
+    name: "Patient Pat / Paul",
+    summary:
+      "Warm, reassuring, and confidence-focused. Great when your swimmer needs encouragement, patience, and a calm presence.",
+    bullets: ["Very encouraging", "Great with nervous swimmers", "Strong rapport and reassurance"],
   },
 };
 
-const CUSTOMER_TYPE_LABEL: Record<ParentType, string> = {
-  supersonic: "Supersonic",
-  high_maintenance: "High Maintenance",
-  extra_attention: "Extra Attention",
-  budget: "Budget",
+// Recommendation logic based on internal customer type (kept private)
+const RECOMMENDATION: Record<ParentType, { primary: InstructorType; alternate?: InstructorType }> = {
+  supersonic: { primary: "coaching", alternate: "structured" }, // SuperSonic -> Coaching or Structured
+  high_maintenance: { primary: "structured" },                  // High Maintenance -> Structured
+  extra_attention: { primary: "patient" },                      // Extra Attention -> Patient
+  budget: { primary: "free_spirit", alternate: "patient" },     // Budget -> Free Spirit or Patient
 };
 
-function mapWinnerToInternalCode(winner: ParentType): InternalCode {
-  if (winner === "supersonic") return "A";
-  if (winner === "high_maintenance") return "B";
-  if (winner === "extra_attention") return "C";
-  return "D";
-}
-
-function mapWinnerToInstructorMatch(winner: ParentType): { primary: InstructorPersonaKey; alternate?: InstructorPersonaKey } {
-  switch (winner) {
-    case "supersonic":
-      return { primary: "coaching", alternate: "structured" };
-    case "high_maintenance":
-      return { primary: "structured" };
-    case "extra_attention":
-      return { primary: "patient" };
-    case "budget":
-      return { primary: "free_spirit", alternate: "patient" };
-    default:
-      return { primary: "patient" };
-  }
-}
+/* -------------------------- Questions (customer-facing) -------------------------- */
 
 const MATCH_QUESTIONS = [
   {
@@ -124,7 +155,7 @@ const MATCH_QUESTIONS = [
     title: "If you had a concern about lessons, what would you most likely ask?",
     options: [
       { key: "A", text: "How long until we see progress?" },
-      { key: "B", text: "Can I learn more about the instructor/curriculum or speak with a manager?" },
+      { key: "B", text: "Can I speak with a manager or learn more about the instructor/curriculum?" },
       { key: "C", text: "Can we talk through what I’m noticing with my child?" },
       { key: "D", text: "Are there alternative pricing options?" },
     ] as { key: AnswerKey; text: string }[],
@@ -139,23 +170,36 @@ function computeMatchScores(state: MatchState) {
     budget: 0,
   };
 
-  const w = { q1: 40, q2: 30, q3: 20, q4: 10 };
+  // Weighted to lean toward priorities over logistics
+  const w = { q1: 40, q2: 25, q3: 25, q4: 10 };
 
-  if (state.q1) scores[MATCH_MAP[state.q1]] += w.q1;
-  if (state.q2) scores[MATCH_MAP[state.q2]] += w.q2;
-  if (state.q3) scores[MATCH_MAP[state.q3]] += w.q3;
-  if (state.q4) scores[MATCH_MAP[state.q4]] += w.q4;
+  if (state.q1) scores[ANSWER_TO_PARENT[state.q1]] += w.q1;
+  if (state.q2) scores[ANSWER_TO_PARENT[state.q2]] += w.q2;
+  if (state.q3) scores[ANSWER_TO_PARENT[state.q3]] += w.q3;
+  if (state.q4) scores[ANSWER_TO_PARENT[state.q4]] += w.q4;
 
   return scores;
 }
 
-function pickMatch(state: MatchState) {
+function pickWinner(state: MatchState) {
   const scores = computeMatchScores(state);
   const answers = [state.q1, state.q2, state.q3, state.q4];
   if (answers.some((a) => !a)) return { winner: undefined as ParentType | undefined, scores };
 
-  const sorted = (Object.entries(scores) as [ParentType, number][]).sort((a, b) => b[1] - a[1]);
+  const sorted = (Object.entries(scores) as [ParentType, number][])
+    .sort((a, b) => b[1] - a[1]);
+
   return { winner: sorted[0][0], scores };
+}
+
+function getInstructorMatchFromWinner(winner: ParentType | undefined) {
+  if (!winner) return null;
+
+  const rec = RECOMMENDATION[winner];
+  const primary = INSTRUCTOR_DISPLAY[rec.primary];
+  const alternate = rec.alternate ? INSTRUCTOR_DISPLAY[rec.alternate] : undefined;
+
+  return { primary, alternate, internalLetter: PARENT_TO_LETTER[winner] as "A" | "B" | "C" | "D" };
 }
 
 /* -------------------------------- Level Finder ---------------------------- */
@@ -179,14 +223,12 @@ const LEVELS: Record<LevelKey, { title: string; ratio: string; description: stri
   PARENTTOT: {
     title: "PARENTTOT – Intro to Water (4 mo. – 36 mo.)",
     ratio: "6:1 Ratio",
-    description:
-      "Parent and child build comfort and foundational skills together, with a path to independent lessons when ready.",
+    description: "Parent and child build comfort and foundational skills together, with a path to independent lessons when ready.",
   },
   TODDLER_TRANSITION: {
     title: "TODDLER TRANSITION – Water Comfort & Water Safety Basics (24 mo. – 36 mo.)",
     ratio: "3:1 Ratio",
-    description:
-      "Swimmers learn fundamental safety and comfort skills in a parent-free group format, with repetition and encouragement.",
+    description: "Swimmers learn fundamental safety and comfort skills in a parent-free group format, with repetition and encouragement.",
   },
   BEGINNER_1: {
     title: "BEGINNER 1 – Introduction to Water Safety and Swimming Foundations",
@@ -290,7 +332,8 @@ function monthsBetween(dob: Date, now: Date) {
 
 function yearsBetween(dob: Date, now: Date) {
   let years = now.getFullYear() - dob.getFullYear();
-  const hadBirthday = now.getMonth() > dob.getMonth() || (now.getMonth() === dob.getMonth() && now.getDate() >= dob.getDate());
+  const hadBirthday =
+    now.getMonth() > dob.getMonth() || (now.getMonth() === dob.getMonth() && now.getDate() >= dob.getDate());
   if (!hadBirthday) years -= 1;
   return years;
 }
@@ -386,48 +429,6 @@ function computeLevel(state: LevelState): { levelKey?: LevelKey; reason?: string
 
 /* ---------------------------------- UI ----------------------------------- */
 
-type Stage = "landing" | "match" | "age" | "skills" | "endurance" | "comments" | "results";
-type ContactMethod = "email" | "phone" | "";
-
-const LOCATIONS = [
-  "SwimLabs Westchester",
-  "SwimLabs The Woodlands",
-  "SafeSplash Riverdale",
-  "SafeSplash Santa Monica",
-  "SafeSplash Torrance",
-  "SafeSplash Summerlin",
-] as const;
-
-type LocationName = (typeof LOCATIONS)[number];
-
-const LOCATION_PORTAL: Record<LocationName, string> = {
-  "SwimLabs Westchester": "https://portal.iclasspro.com/westchesterny/classes",
-  "SafeSplash Riverdale": "https://portal.iclasspro.com/yonkersriverdaleny/classes",
-  "SwimLabs The Woodlands": "https://portal.iclasspro.com/thewoodlandsnorthtx/classes",
-  "SafeSplash Santa Monica": "https://portal.iclasspro.com/santamonicasunsetparkca/classes",
-  "SafeSplash Torrance": "https://portal.iclasspro.com/torrancedelamoca/classes",
-  "SafeSplash Summerlin": "https://portal.iclasspro.com/lasvegassummerlinnv/classes",
-};
-
-const LOCATION_CONTACT: Record<LocationName, { brand: "SwimLabs" | "SafeSplash"; phone: string; email: string }> = {
-  "SwimLabs Westchester": { brand: "SwimLabs", phone: "914-800-7946", email: "westchester-ny@swimlabs.com" },
-  "SwimLabs The Woodlands": { brand: "SwimLabs", phone: "(281) 688-5993", email: "the-woodlands-north-tx@swimlabs.com" },
-  "SafeSplash Riverdale": { brand: "SafeSplash", phone: "914-215-1683", email: "yonkers-riverdale-ny@safesplash.com" },
-  "SafeSplash Santa Monica": { brand: "SafeSplash", phone: "424-282-4301", email: "santa-monica-sunset-park-ca@safesplash.com" },
-  "SafeSplash Torrance": { brand: "SafeSplash", phone: "424-282-4304", email: "torrance-del-amo-ca@safesplash.com" },
-  "SafeSplash Summerlin": { brand: "SafeSplash", phone: "702-291-1937", email: "las-vegas-summerlin-nv@safesplash.com" },
-};
-
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Saturday", "Sunday"] as const;
-
-const TIME_WINDOWS = [
-  "Morning (9am–12pm, Weekends Only)",
-  "Early Afternoon (12pm–4pm, All Days)",
-  "Afternoon (4pm–6pm, Weekdays Only)",
-  "Evening (6pm–8pm, Weekdays Only)",
-  "Flexible",
-] as const;
-
 function Progress({ labels, activeIndex }: { labels: string[]; activeIndex: number }) {
   return (
     <div className="mx-auto mt-8 max-w-3xl px-4">
@@ -443,7 +444,7 @@ function Progress({ labels, activeIndex }: { labels: string[]; activeIndex: numb
                   className={[
                     "h-10 w-10 rounded-full border-2 flex items-center justify-center text-sm font-bold",
                     done ? "bg-sky-600 border-sky-600 text-white" : "",
-                    active && !done ? "border-sky-600 text-sky-900 bg-white" : "",
+                    active && !done ? "border-sky-600 text-sky-700 bg-white" : "",
                     !active && !done ? "border-slate-300 text-slate-500 bg-white" : "",
                   ].join(" ")}
                 >
@@ -475,7 +476,7 @@ function Container({ title, subtitle, children }: { title: string; subtitle: str
         <p className="mt-3 text-lg font-medium text-slate-800">{subtitle}</p>
       </div>
 
-      <div className="mt-8 rounded-3xl border border-white/50 bg-white/90 p-8 sm:p-10 shadow-xl backdrop-blur">
+      <div className="mt-8 rounded-2xl border border-white/60 bg-white/90 p-8 sm:p-10 shadow-xl backdrop-blur">
         {children}
       </div>
     </div>
@@ -488,14 +489,14 @@ function YesNo({ onYes, onNo }: { onYes: () => void; onNo: () => void }) {
       <button
         type="button"
         onClick={onYes}
-        className="h-14 rounded-2xl border border-sky-200 bg-white px-4 text-base font-semibold text-slate-900 hover:border-sky-600 hover:bg-sky-50"
+        className="h-14 rounded-xl border border-sky-200 bg-white px-4 text-base font-semibold text-slate-900 hover:border-sky-600 hover:bg-sky-50"
       >
         Yes
       </button>
       <button
         type="button"
         onClick={onNo}
-        className="h-14 rounded-2xl border border-sky-200 bg-white px-4 text-base font-semibold text-slate-900 hover:border-sky-600 hover:bg-sky-50"
+        className="h-14 rounded-xl border border-sky-200 bg-white px-4 text-base font-semibold text-slate-900 hover:border-sky-600 hover:bg-sky-50"
       >
         No
       </button>
@@ -510,7 +511,7 @@ function PrimaryButton({ onClick, disabled, label }: { onClick: () => void; disa
       disabled={disabled}
       onClick={onClick}
       className={[
-        "mt-6 h-14 w-full rounded-2xl text-base font-semibold text-white shadow-sm",
+        "mt-6 h-14 w-full rounded-xl text-base font-semibold text-white shadow-sm",
         disabled ? "bg-sky-300 cursor-not-allowed" : "bg-sky-600 hover:bg-sky-700",
       ].join(" ")}
     >
@@ -524,7 +525,7 @@ function SecondaryButton({ onClick, label }: { onClick: () => void; label: strin
     <button
       type="button"
       onClick={onClick}
-      className="h-12 rounded-2xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-900 hover:border-sky-600 hover:bg-sky-50"
+      className="h-12 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-900 hover:border-sky-600 hover:bg-sky-50"
     >
       {label}
     </button>
@@ -536,7 +537,7 @@ function OptionButton({ onClick, children }: { onClick: () => void; children: Re
     <button
       type="button"
       onClick={onClick}
-      className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-left text-slate-900 hover:border-sky-600 hover:bg-sky-50"
+      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-4 text-left text-slate-900 hover:border-sky-600 hover:bg-sky-50"
     >
       {children}
     </button>
@@ -556,11 +557,11 @@ function ContactBanner({
 
   const headline =
     variant === "landing"
-      ? "Get your first lesson 100% FREE, no credit card required and zero obligation."
-      : "Nice work. Save your results and text them to us. We’ll help you pick the best class.";
+      ? "Get your first lesson 100% FREE. No credit card. Zero pressure."
+      : "Nice work. Save your results and we’ll help you pick the best class and instructor.";
 
   return (
-    <div className="mt-6 rounded-3xl border border-sky-200 bg-sky-50 p-5">
+    <div className="mt-6 rounded-2xl border border-sky-200 bg-sky-50 p-5">
       <div className="text-sm font-semibold text-sky-900">{contact.brand}</div>
       <div className="mt-1 text-lg font-extrabold text-slate-900">{headline}</div>
       <div className="mt-3 text-slate-900">
@@ -597,13 +598,13 @@ function Modal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-xl">
+      <div className="relative w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
         <div className="text-xl font-extrabold text-slate-900">{title}</div>
         <div className="mt-3 whitespace-pre-wrap text-slate-800">{body}</div>
         <button
           type="button"
           onClick={onClose}
-          className="mt-6 h-12 w-full rounded-2xl bg-sky-600 font-semibold text-white hover:bg-sky-700"
+          className="mt-6 h-12 w-full rounded-xl bg-sky-600 font-semibold text-white hover:bg-sky-700"
         >
           Got it
         </button>
@@ -671,14 +672,14 @@ export default function Page() {
   // UI helpers
   const [toast, setToast] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [sending, setSending] = useState(false);
   const [tooYoungOpen, setTooYoungOpen] = useState(false);
-
-  // Prevent duplicate email submits
-  const [submittedEmailOnce, setSubmittedEmailOnce] = useState(false);
 
   const resultsRef = useRef<HTMLDivElement | null>(null);
 
-  const matchPick = useMemo(() => pickMatch(match), [match]);
+  const matchPick = useMemo(() => pickWinner(match), [match]);
+  const instructorPick = useMemo(() => getInstructorMatchFromWinner(matchPick.winner), [matchPick.winner]);
+
   const levelPick = useMemo(() => computeLevel(level), [level]);
 
   const currentMatchQ = MATCH_QUESTIONS[matchStep];
@@ -687,27 +688,20 @@ export default function Page() {
   const portalUrl = location ? LOCATION_PORTAL[location] : "";
   const contact = location ? LOCATION_CONTACT[location] : null;
 
-  // Instructor mapping derived from match winner
-  const instructorMatch = useMemo(() => {
-    if (!matchPick.winner) return null;
-    const mapped = mapWinnerToInstructorMatch(matchPick.winner);
-    return {
-      internalCode: mapWinnerToInternalCode(matchPick.winner),
-      primaryKey: mapped.primary,
-      alternateKey: mapped.alternate,
-    };
-  }, [matchPick.winner]);
-
-  const customerInstructorPrimary = instructorMatch ? INSTRUCTOR_PERSONAS[instructorMatch.primaryKey] : null;
-  const customerInstructorAlternate =
-    instructorMatch?.alternateKey ? INSTRUCTOR_PERSONAS[instructorMatch.alternateKey] : null;
-
   const birthdayGreeting = useMemo(() => {
     if (!level.birthday) return null;
     const dob = new Date(level.birthday + "T00:00:00");
     const now = new Date();
     return getBirthdayGreeting(dob, now);
   }, [level.birthday]);
+
+  const landingValid =
+    clientName.trim().length > 0 &&
+    location !== "" &&
+    preferredDay !== "" &&
+    preferredTime !== "" &&
+    contactMethod !== "" &&
+    (contactMethod === "email" ? contactEmail.trim().length > 3 : contactPhone.trim().length > 6);
 
   const resetAll = () => {
     setStage("landing");
@@ -730,16 +724,7 @@ export default function Page() {
     setComments("");
     setToast(null);
     setTooYoungOpen(false);
-    setSubmittedEmailOnce(false);
   };
-
-  const landingValid =
-    clientName.trim().length > 0 &&
-    location !== "" &&
-    preferredDay !== "" &&
-    preferredTime !== "" &&
-    contactMethod !== "" &&
-    (contactMethod === "email" ? contactEmail.trim().length > 3 : contactPhone.trim().length > 6);
 
   const answerMatch = (answer: AnswerKey) => {
     const id = currentMatchQ.id as keyof MatchState;
@@ -806,32 +791,40 @@ export default function Page() {
     setStage("comments");
   };
 
+  function getContactValue() {
+    return contactMethod === "email" ? contactEmail : contactPhone;
+  }
+
   function buildSummaryText() {
     const lines: string[] = [];
     lines.push("Client Intake Summary");
-    lines.push("------------------------------");
+    lines.push("--------------------------------");
     lines.push(`Name: ${clientName || "N/A"}`);
     lines.push(`Location: ${location || "N/A"}`);
     lines.push(`Best day: ${preferredDay || "N/A"}`);
     lines.push(`Best time: ${preferredTime || "N/A"}`);
     lines.push(`Contact method: ${contactMethod || "N/A"}`);
-    lines.push(`Contact: ${contactMethod === "email" ? contactEmail || "N/A" : contactPhone || "N/A"}`);
+    lines.push(`Contact: ${getContactValue() || "N/A"}`);
     lines.push("");
 
-    lines.push("Instructor Match (Customer-facing)");
-    lines.push("------------------------------");
-    if (customerInstructorPrimary) {
-      lines.push(`Primary: ${customerInstructorPrimary.display}`);
-      if (customerInstructorAlternate) lines.push(`Alternate: ${customerInstructorAlternate.display}`);
+    lines.push("Instructor Match (Customer)");
+    lines.push("--------------------------------");
+    if (instructorPick) {
+      lines.push(`Primary: ${instructorPick.primary.name}`);
+      if (instructorPick.alternate) lines.push(`Alternate: ${instructorPick.alternate.name}`);
     } else {
       lines.push("Not completed");
     }
     lines.push("");
 
-    lines.push("Internal (Staff-only)");
-    lines.push("------------------------------");
-    if (matchPick.winner) {
-      lines.push(`Code: ${instructorMatch?.internalCode ?? "N/A"}`);
+    lines.push("Internal Code (Staff)");
+    lines.push("--------------------------------");
+    if (instructorPick) {
+      const code = instructorPick.internalLetter;
+      const ops = INTERNAL_OPS_COPY[code];
+      lines.push(`Code: ${code}`);
+      lines.push(`Type: ${ops.label}`);
+      lines.push(`Ops: ${ops.ops}`);
       lines.push(
         `Scores: Goal ${matchPick.scores.supersonic} | Structure ${matchPick.scores.high_maintenance} | Connection ${matchPick.scores.extra_attention} | Value ${matchPick.scores.budget}`
       );
@@ -841,7 +834,7 @@ export default function Page() {
     lines.push("");
 
     lines.push("Level Finder");
-    lines.push("------------------------------");
+    lines.push("--------------------------------");
     if (levelPick.levelKey) {
       const lv = LEVELS[levelPick.levelKey];
       lines.push(`Level: ${lv.title}`);
@@ -854,21 +847,21 @@ export default function Page() {
     if (comments.trim()) {
       lines.push("");
       lines.push("Comments / Concerns");
-      lines.push("------------------------------");
+      lines.push("--------------------------------");
       lines.push(comments.trim());
     }
 
     if (portalUrl) {
       lines.push("");
       lines.push("Enrollment Link");
-      lines.push("------------------------------");
+      lines.push("--------------------------------");
       lines.push(portalUrl);
     }
 
     if (contact) {
       lines.push("");
       lines.push("Location Contact");
-      lines.push("------------------------------");
+      lines.push("--------------------------------");
       lines.push(`${contact.brand} | Phone: ${contact.phone} | Email: ${contact.email}`);
     }
 
@@ -913,64 +906,77 @@ export default function Page() {
     }
   }
 
-  async function submitIntakeEmail(payload: any) {
+  async function sendToTeamEmail() {
+    if (!instructorPick) {
+      setToast("Please complete the match questions first.");
+      setTimeout(() => setToast(null), 2200);
+      return;
+    }
+
+    setSending(true);
+    setToast(null);
+
     try {
+      const payload = {
+        parentName: clientName,
+        location,
+        preferredDay,
+        preferredTime,
+        contactMethod,
+        contactValue: getContactValue(),
+
+        // Customer-facing
+        instructorPrimary: instructorPick.primary.name,
+        instructorSecondary: instructorPick.alternate?.name || "",
+
+        // Staff-only
+        internalCode: instructorPick.internalLetter,
+        scoreGoal: matchPick.scores.supersonic,
+        scoreStructure: matchPick.scores.high_maintenance,
+        scoreConnection: matchPick.scores.extra_attention,
+        scoreValue: matchPick.scores.budget,
+
+        // Level
+        levelTitle: levelPick.levelKey ? LEVELS[levelPick.levelKey].title : "",
+        levelRatio: levelPick.levelKey ? LEVELS[levelPick.levelKey].ratio : "",
+        levelReason: levelPick.reason || "",
+
+        comments,
+      };
+
       const res = await fetch("/api/intake-submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        console.error("intake-submit failed:", data);
-        return false;
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok || !data?.ok) {
+        console.error("Email send failed:", data);
+        setToast("Saved results, but sending failed. Please Save PNG and text it to us.");
+        setTimeout(() => setToast(null), 3500);
+        return;
       }
-      return true;
+
+      setToast("Sent to our team. You’re all set!");
+      setTimeout(() => setToast(null), 2500);
     } catch (e) {
-      console.error("intake-submit error:", e);
-      return false;
+      console.error(e);
+      setToast("Send failed. Please Save PNG and text it to us.");
+      setTimeout(() => setToast(null), 3500);
+    } finally {
+      setSending(false);
     }
-  }
-
-  function buildEmailPayload() {
-    const internalCode: InternalCode | undefined = matchPick.winner ? mapWinnerToInternalCode(matchPick.winner) : undefined;
-
-    const instructorPrimary = customerInstructorPrimary?.display ?? "N/A";
-    const instructorSecondary = customerInstructorAlternate?.display ?? "";
-
-    return {
-      parentName: clientName || "N/A",
-      location: location || "N/A",
-      preferredDay: preferredDay || "N/A",
-      preferredTime: preferredTime || "N/A",
-      contactMethod: contactMethod || "phone",
-      contactValue: contactMethod === "email" ? contactEmail || "N/A" : contactPhone || "N/A",
-
-      instructorPrimary,
-      instructorSecondary,
-
-      internalCode,
-      scoreGoal: matchPick.scores.supersonic,
-      scoreStructure: matchPick.scores.high_maintenance,
-      scoreConnection: matchPick.scores.extra_attention,
-      scoreValue: matchPick.scores.budget,
-
-      levelTitle: levelPick.levelKey ? LEVELS[levelPick.levelKey].title : "Not enough info",
-      levelRatio: levelPick.levelKey ? LEVELS[levelPick.levelKey].ratio : "N/A",
-      levelReason: levelPick.reason || "",
-
-      comments: comments || "",
-    };
   }
 
   return (
     <main className="min-h-screen relative overflow-hidden">
-      {/* Cute + bright background */}
-      <div className="absolute inset-0 bg-gradient-to-b from-pink-50 via-sky-100 to-emerald-100" />
-      <div className="absolute -top-40 -left-40 h-[420px] w-[420px] rounded-full bg-pink-200/50 blur-3xl" />
-      <div className="absolute top-20 -right-48 h-[520px] w-[520px] rounded-full bg-sky-200/40 blur-3xl" />
-      <div className="absolute -bottom-48 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-emerald-200/40 blur-3xl" />
+      {/* Bright, cute, easy-to-read background */}
+      <div className="absolute inset-0 bg-gradient-to-b from-cyan-50 via-sky-100 to-indigo-50" />
+      <div className="absolute -top-48 -left-48 h-[520px] w-[520px] rounded-full bg-sky-200/60 blur-3xl" />
+      <div className="absolute top-24 -right-56 h-[560px] w-[560px] rounded-full bg-cyan-200/40 blur-3xl" />
+      <div className="absolute -bottom-56 left-1/2 h-[560px] w-[560px] -translate-x-1/2 rounded-full bg-indigo-200/40 blur-3xl" />
 
       <div className="relative">
         <header className="w-full">
@@ -988,7 +994,7 @@ export default function Page() {
 
         <div className="px-4">
           <p className="mx-auto max-w-5xl text-center font-medium text-slate-900">
-            🏊 Answer a few questions to find the best instructor fit and the best swim class level.
+            Answer a few questions to find the best instructor fit and the best swim class level. 🏊
           </p>
         </div>
 
@@ -996,7 +1002,7 @@ export default function Page() {
         {stage === "landing" && (
           <>
             <Progress labels={["Intake", "Match", "Level", "Comments", "Results"]} activeIndex={0} />
-            <Container title="Get Started" subtitle="Quick intake first. Then we’ll match you with the best fit.">
+            <Container title="Get Started" subtitle="Quick details first, then we’ll match you.">
               <div className="grid gap-6">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="grid gap-2">
@@ -1005,7 +1011,7 @@ export default function Page() {
                       value={clientName}
                       onChange={(e) => setClientName(e.target.value)}
                       placeholder="Example: Khaled A."
-                      className="h-12 rounded-2xl border border-slate-300 bg-white px-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-sky-600"
+                      className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-sky-600"
                     />
                   </label>
 
@@ -1014,7 +1020,7 @@ export default function Page() {
                     <select
                       value={location}
                       onChange={(e) => setLocation(e.target.value as LocationName)}
-                      className="h-12 rounded-2xl border border-slate-300 bg-white px-3 text-slate-900 outline-none focus:border-sky-600"
+                      className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 outline-none focus:border-sky-600"
                     >
                       <option value="">Select a location</option>
                       {LOCATIONS.map((l) => (
@@ -1034,7 +1040,7 @@ export default function Page() {
                     <select
                       value={preferredDay}
                       onChange={(e) => setPreferredDay(e.target.value as any)}
-                      className="h-12 rounded-2xl border border-slate-300 bg-white px-3 text-slate-900 outline-none focus:border-sky-600"
+                      className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 outline-none focus:border-sky-600"
                     >
                       <option value="">Select a day</option>
                       {DAYS.map((d) => (
@@ -1050,7 +1056,7 @@ export default function Page() {
                     <select
                       value={preferredTime}
                       onChange={(e) => setPreferredTime(e.target.value as any)}
-                      className="h-12 rounded-2xl border border-slate-300 bg-white px-3 text-slate-900 outline-none focus:border-sky-600"
+                      className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 outline-none focus:border-sky-600"
                     >
                       <option value="">Select a time window</option>
                       {TIME_WINDOWS.map((t) => (
@@ -1068,7 +1074,7 @@ export default function Page() {
                         type="button"
                         onClick={() => setContactMethod("phone")}
                         className={[
-                          "h-12 rounded-2xl border px-4 text-sm font-semibold",
+                          "h-12 rounded-xl border px-4 text-sm font-semibold",
                           contactMethod === "phone"
                             ? "border-sky-600 bg-sky-50 text-slate-900"
                             : "border-slate-300 bg-white text-slate-900 hover:border-sky-600 hover:bg-sky-50",
@@ -1080,7 +1086,7 @@ export default function Page() {
                         type="button"
                         onClick={() => setContactMethod("email")}
                         className={[
-                          "h-12 rounded-2xl border px-4 text-sm font-semibold",
+                          "h-12 rounded-xl border px-4 text-sm font-semibold",
                           contactMethod === "email"
                             ? "border-sky-600 bg-sky-50 text-slate-900"
                             : "border-slate-300 bg-white text-slate-900 hover:border-sky-600 hover:bg-sky-50",
@@ -1098,7 +1104,7 @@ export default function Page() {
                         value={contactPhone}
                         onChange={(e) => setContactPhone(e.target.value)}
                         placeholder="Example: 201-555-0123"
-                        className="h-12 rounded-2xl border border-slate-300 bg-white px-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-sky-600"
+                        className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-sky-600"
                       />
                     </label>
                   )}
@@ -1110,7 +1116,7 @@ export default function Page() {
                         value={contactEmail}
                         onChange={(e) => setContactEmail(e.target.value)}
                         placeholder="Example: name@email.com"
-                        className="h-12 rounded-2xl border border-slate-300 bg-white px-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-sky-600"
+                        className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-sky-600"
                       />
                     </label>
                   )}
@@ -1130,10 +1136,10 @@ export default function Page() {
         {stage === "match" && (
           <>
             <Progress labels={["Intake", "Match", "Level", "Comments", "Results"]} activeIndex={1} />
-            <Container title="Instructor Match" subtitle="Answer 4 quick questions. One at a time.">
+            <Container title="Instructor Match" subtitle="4 quick questions. One at a time.">
               <div className="grid gap-6">
                 <div>
-                  <div className="text-sm font-semibold text-sky-900">
+                  <div className="text-sm font-semibold text-sky-700">
                     Question {matchStep + 1} of {MATCH_QUESTIONS.length}
                   </div>
                   <div className="mt-2 text-2xl font-extrabold text-slate-900">{currentMatchQ.title}</div>
@@ -1142,7 +1148,7 @@ export default function Page() {
                     {currentMatchQ.options.map((o) => (
                       <OptionButton key={o.key} onClick={() => answerMatch(o.key)}>
                         <div className="flex gap-3">
-                          <div className="mt-[2px] inline-flex h-7 w-7 items-center justify-center rounded-full bg-sky-50 text-sm font-bold text-sky-900">
+                          <div className="mt-[2px] inline-flex h-7 w-7 items-center justify-center rounded-full bg-sky-50 text-sm font-bold text-sky-700">
                             {o.key}
                           </div>
                           <div className="text-base font-semibold text-slate-900">{o.text}</div>
@@ -1173,32 +1179,34 @@ export default function Page() {
                   type="date"
                   value={level.birthday ?? ""}
                   onChange={(e) => setLevel((s) => ({ ...s, birthday: e.target.value }))}
-                  className="h-12 rounded-2xl border border-slate-300 bg-white px-3 text-slate-900 outline-none focus:border-sky-600"
+                  className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 outline-none focus:border-sky-600"
                 />
               </div>
 
               {birthdayGreeting && (
-                <div className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
+                <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
                   <div className="text-sm font-semibold text-amber-900">{birthdayGreeting.title}</div>
                   <div className="mt-2 text-slate-900 font-semibold">{birthdayGreeting.body}</div>
                 </div>
               )}
 
-              {level.birthday &&
-                (() => {
-                  const dob = new Date(level.birthday + "T00:00:00");
-                  const now = new Date();
-                  const months = monthsBetween(dob, now);
+              {level.birthday && (() => {
+                const dob = new Date(level.birthday + "T00:00:00");
+                const now = new Date();
+                const months = monthsBetween(dob, now);
 
-                  if (months < 24 || months > 36) return null;
+                if (months < 24 || months > 36) return null;
 
-                  return (
-                    <div className="mt-8 rounded-2xl border border-slate-300 bg-white p-5">
-                      <div className="text-lg font-extrabold text-slate-900">Will a parent be in the water?</div>
-                      <YesNo onYes={() => setLevel((s) => ({ ...s, parentInWater: true }))} onNo={() => setLevel((s) => ({ ...s, parentInWater: false }))} />
-                    </div>
-                  );
-                })()}
+                return (
+                  <div className="mt-8 rounded-xl border border-slate-300 bg-white p-5">
+                    <div className="text-lg font-extrabold text-slate-900">Will a parent be in the water?</div>
+                    <YesNo
+                      onYes={() => setLevel((s) => ({ ...s, parentInWater: true }))}
+                      onNo={() => setLevel((s) => ({ ...s, parentInWater: false }))}
+                    />
+                  </div>
+                );
+              })()}
 
               <PrimaryButton
                 label="Continue"
@@ -1233,7 +1241,7 @@ export default function Page() {
           <>
             <Progress labels={["Intake", "Match", "Level", "Comments", "Results"]} activeIndex={2} />
             <Container title="Swim Level Finder" subtitle="Step 2: Skills">
-              <div className="text-sm font-semibold text-sky-900">
+              <div className="text-sm font-semibold text-sky-700">
                 Skills {skillIndex + 1} of {SKILL_QUESTIONS.length}
               </div>
               <div className="mt-3 text-2xl font-extrabold text-slate-900">{currentSkill.text}</div>
@@ -1289,22 +1297,10 @@ export default function Page() {
                   value={comments}
                   onChange={(e) => setComments(e.target.value)}
                   placeholder="Example: nervous around back floats, prefers a calm instructor, goal is water safety before summer, etc."
-                  className="min-h-[140px] w-full rounded-2xl border border-slate-300 bg-white p-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-sky-600"
+                  className="min-h-[140px] w-full rounded-xl border border-slate-300 bg-white p-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-sky-600"
                 />
 
-                <PrimaryButton
-                  label="See Results"
-                  onClick={async () => {
-                    setStage("results");
-
-                    if (!submittedEmailOnce) {
-                      setSubmittedEmailOnce(true);
-                      const ok = await submitIntakeEmail(buildEmailPayload());
-                      setToast(ok ? "Saved. We’ll reach out shortly." : "Saved. If you need help, text us.");
-                      setTimeout(() => setToast(null), 2500);
-                    }
-                  }}
-                />
+                <PrimaryButton label="See Results" onClick={() => setStage("results")} />
 
                 <div className="mt-2 flex justify-between gap-3">
                   <SecondaryButton
@@ -1344,13 +1340,13 @@ export default function Page() {
               <div className="text-center">
                 <h1 className="text-4xl font-extrabold tracking-tight text-slate-900">Results</h1>
                 <p className="mt-3 text-lg font-medium text-slate-800">
-                  Save this as an image (PNG), then text it to us. We’ll help you pick the best class.
+                  Save your results as an image (PNG), then text it to us. We’ll help you pick the best class.
                 </p>
               </div>
 
               <ContactBanner location={location} contact={contact} variant="results" />
 
-              <div ref={resultsRef} className="mt-6 rounded-3xl border border-white/50 bg-white p-8 shadow-xl">
+              <div ref={resultsRef} className="mt-6 rounded-2xl border border-white/60 bg-white p-8 shadow-xl">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="text-sm font-semibold text-slate-900">Intake</div>
@@ -1360,8 +1356,7 @@ export default function Page() {
                       <div><span className="font-semibold">Best day:</span> {preferredDay || "N/A"}</div>
                       <div><span className="font-semibold">Best time:</span> {preferredTime || "N/A"}</div>
                       <div>
-                        <span className="font-semibold">Contact:</span>{" "}
-                        {contactMethod === "email" ? (contactEmail || "N/A") : (contactPhone || "N/A")}
+                        <span className="font-semibold">Contact:</span> {getContactValue() || "N/A"}
                       </div>
                     </div>
                   </div>
@@ -1372,8 +1367,8 @@ export default function Page() {
                 </div>
 
                 <div className="mt-6 grid gap-6 md:grid-cols-2">
-                  <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6">
-                    <div className="text-sm font-semibold text-sky-900">Swim Level Finder</div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+                    <div className="text-sm font-semibold text-sky-700">Swim Level Finder</div>
                     <div className="mt-2 text-2xl font-extrabold text-slate-900">
                       {levelPick.levelKey ? LEVELS[levelPick.levelKey].title : "Not enough info"}
                     </div>
@@ -1383,48 +1378,49 @@ export default function Page() {
                       </div>
                     )}
                     {levelPick.reason && (
-                      <div className="mt-4 rounded-2xl border border-sky-200 bg-white p-4 text-slate-900">
+                      <div className="mt-4 rounded-xl border border-sky-200 bg-white p-4 text-slate-900">
                         <div className="text-sm font-semibold text-slate-900">Why this level</div>
                         <div className="mt-1">{levelPick.reason}</div>
                       </div>
                     )}
-                    {levelPick.levelKey && <div className="mt-4 text-slate-900">{LEVELS[levelPick.levelKey].description}</div>}
+                    {levelPick.levelKey && (
+                      <div className="mt-4 text-slate-900">{LEVELS[levelPick.levelKey].description}</div>
+                    )}
                   </div>
 
-                  <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6">
-                    <div className="text-sm font-semibold text-sky-900">Instructor Match</div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
+                    <div className="text-sm font-semibold text-sky-700">Instructor Match</div>
 
-                    {customerInstructorPrimary ? (
+                    {instructorPick ? (
                       <>
-                        <div className="mt-2 text-2xl font-extrabold text-slate-900">{customerInstructorPrimary.display}</div>
-                        <div className="mt-3 text-slate-900 font-semibold">{customerInstructorPrimary.tagline}</div>
+                        <div className="mt-2 text-2xl font-extrabold text-slate-900">{instructorPick.primary.name}</div>
+                        <div className="mt-3 text-slate-900">{instructorPick.primary.summary}</div>
 
                         <div className="mt-4">
                           <div className="text-sm font-semibold text-slate-900">What you can expect</div>
                           <ul className="mt-2 list-disc space-y-1 pl-5 text-slate-900">
-                            {customerInstructorPrimary.bullets.map((b) => (
+                            {instructorPick.primary.bullets.map((b) => (
                               <li key={b}>{b}</li>
                             ))}
                           </ul>
                         </div>
 
-                        {customerInstructorAlternate && (
-                          <div className="mt-5 rounded-2xl border border-sky-200 bg-white p-4 text-sm text-slate-900">
-                            <div className="font-semibold">Good alternate fit</div>
-                            <div className="mt-1">{customerInstructorAlternate.display}</div>
+                        {instructorPick.alternate && (
+                          <div className="mt-5 rounded-xl border border-sky-200 bg-white p-4 text-sm text-slate-900">
+                            <div className="font-semibold">Great alternate option</div>
+                            <div className="mt-1">{instructorPick.alternate.name}</div>
                           </div>
                         )}
 
-                        {/* INTERNAL staff-only block: code + scores only */}
-                        <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-900">
-                          <div className="font-semibold">Internal (staff-only)</div>
+                        {/* Staff-only section: letter + scores only */}
+                        <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-900">
+                          <div className="font-semibold">Internal Code (Staff)</div>
+                          <div className="mt-1">
+                            Code: <span className="font-bold">{instructorPick.internalLetter}</span>
+                          </div>
                           <div className="mt-2">
-                            <div><span className="font-semibold">Code:</span> {instructorMatch?.internalCode ?? "N/A"}</div>
-                            <div className="mt-1">
-                              <span className="font-semibold">Scores:</span>{" "}
-                              Goal {matchPick.scores.supersonic} | Structure {matchPick.scores.high_maintenance} | Connection{" "}
-                              {matchPick.scores.extra_attention} | Value {matchPick.scores.budget}
-                            </div>
+                            Score: Goal {matchPick.scores.supersonic} | Structure {matchPick.scores.high_maintenance} | Connection{" "}
+                            {matchPick.scores.extra_attention} | Value {matchPick.scores.budget}
                           </div>
                         </div>
                       </>
@@ -1435,40 +1431,37 @@ export default function Page() {
                 </div>
 
                 {comments.trim() && (
-                  <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
+                  <div className="mt-6 rounded-xl border border-slate-200 bg-white p-5">
                     <div className="text-sm font-semibold text-slate-900">Comments / Concerns</div>
                     <div className="mt-2 whitespace-pre-wrap text-slate-900">{comments.trim()}</div>
                   </div>
                 )}
 
                 {portalUrl && (
-                  <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5">
+                  <div className="mt-6 rounded-xl border border-slate-200 bg-white p-5">
                     <div className="text-sm font-semibold text-slate-900">Enroll or view classes</div>
                     <div className="mt-2 text-slate-900 break-all">{portalUrl}</div>
                   </div>
                 )}
 
                 {contact && (
-                  <div className="mt-6 rounded-3xl border border-sky-200 bg-sky-50 p-5">
-                    <div className="text-sm font-semibold text-slate-900">Text this PNG to the location team</div>
+                  <div className="mt-6 rounded-xl border border-sky-200 bg-sky-50 p-5">
+                    <div className="text-sm font-semibold text-slate-900">Tip</div>
                     <div className="mt-2 text-slate-900">
-                      <div><span className="font-semibold">Phone:</span> {contact.phone}</div>
-                      <div><span className="font-semibold">Email:</span> {contact.email}</div>
-                    </div>
-                    <div className="mt-3 text-sm font-medium text-slate-900">
-                      Tip: Save as PNG, then text the image to us. We’ll help you pick the best class.
+                      Save as PNG, then text the image to us at <span className="font-semibold">{contact.phone}</span>.
                     </div>
                   </div>
                 )}
               </div>
 
+              {/* Actions */}
               <div className="mt-6 grid gap-3 sm:grid-cols-2">
                 <button
                   type="button"
                   onClick={saveAsPng}
                   disabled={exporting}
                   className={[
-                    "h-12 rounded-2xl font-semibold",
+                    "h-12 rounded-xl font-semibold",
                     exporting ? "bg-sky-300 text-white cursor-not-allowed" : "bg-slate-900 text-white hover:bg-slate-800",
                   ].join(" ")}
                 >
@@ -1478,9 +1471,23 @@ export default function Page() {
                 <button
                   type="button"
                   onClick={copySummary}
-                  className="h-12 rounded-2xl border border-slate-300 bg-white font-semibold text-slate-900 hover:border-sky-600 hover:bg-sky-50"
+                  className="h-12 rounded-xl border border-slate-300 bg-white font-semibold text-slate-900 hover:border-sky-600 hover:bg-sky-50"
                 >
                   Copy Summary
+                </button>
+              </div>
+
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={sendToTeamEmail}
+                  disabled={sending}
+                  className={[
+                    "h-12 w-full rounded-xl font-semibold text-white",
+                    sending ? "bg-sky-300 cursor-not-allowed" : "bg-sky-600 hover:bg-sky-700",
+                  ].join(" ")}
+                >
+                  {sending ? "Sending..." : "Send to our team"}
                 </button>
               </div>
 
@@ -1490,7 +1497,7 @@ export default function Page() {
                     href={portalUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex h-12 w-full items-center justify-center rounded-2xl bg-sky-600 px-4 font-semibold text-white hover:bg-sky-700"
+                    className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-indigo-600 px-4 font-semibold text-white hover:bg-indigo-700"
                   >
                     Open Enrollment Link
                   </a>
@@ -1504,7 +1511,6 @@ export default function Page() {
                     setStage("age");
                     setLevel({});
                     setSkillIndex(0);
-                    setSubmittedEmailOnce(false);
                   }}
                   label="Redo Level Finder"
                 />
@@ -1513,18 +1519,32 @@ export default function Page() {
                     setStage("match");
                     setMatchStep(0);
                     setMatch({});
-                    setSubmittedEmailOnce(false);
                   }}
                   label="Redo Match"
                 />
                 <SecondaryButton onClick={resetAll} label="Start over" />
               </div>
+
+              {/* Back-office key (optional helper text you can remove) */}
+              {instructorPick && (
+                <div className="mt-8 rounded-2xl border border-slate-200 bg-white/80 p-6">
+                  <div className="text-sm font-semibold text-slate-900">Back-office key (for staff)</div>
+                  <div className="mt-2 text-slate-900">
+                    <span className="font-semibold">Code {instructorPick.internalLetter}:</span>{" "}
+                    {INTERNAL_OPS_COPY[instructorPick.internalLetter].label}.{" "}
+                    {INTERNAL_OPS_COPY[instructorPick.internalLetter].ops}
+                  </div>
+                  <div className="mt-3 text-sm text-slate-700">
+                    If you do not want customers seeing this section at all, tell me and I’ll hide it behind a staff-only toggle.
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}
 
         {toast && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-2xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-lg">
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-lg">
             {toast}
           </div>
         )}
@@ -1533,7 +1553,7 @@ export default function Page() {
           open={tooYoungOpen}
           title="A little too young (for now)"
           body={
-            "We’re so glad you found us.\n\nOur lessons start at 4 months.\n\nAs a welcome gift for you and your little one: your first month is on us when you’re eligible.\n\nText us anytime and we’ll help you line up the perfect start date."
+            "We’re so glad you found us.\n\nOur lessons start at 4 months.\n\nText us anytime and we’ll help you line up the perfect start date."
           }
           onClose={() => setTooYoungOpen(false)}
         />
