@@ -260,6 +260,50 @@ function yearsBetween(dob: Date, now: Date) {
   return years;
 }
 
+function daysBetween(a: Date, b: Date) {
+  const ms = 24 * 60 * 60 * 1000;
+  const utcA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
+  const utcB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round((utcB - utcA) / ms);
+}
+
+function getBirthdayGreeting(dob: Date, now: Date): { title: string; body: string } | null {
+  // We only care about month/day, so compare last and next birthday around today.
+  const thisYear = now.getFullYear();
+  const thisYearsBirthday = new Date(thisYear, dob.getMonth(), dob.getDate());
+  const lastBirthday = new Date(thisYearsBirthday);
+  const nextBirthday = new Date(thisYearsBirthday);
+
+  if (thisYearsBirthday > now) {
+    // birthday hasn't happened yet this year
+    lastBirthday.setFullYear(thisYear - 1);
+  } else {
+    // birthday has happened (or is today) this year
+    nextBirthday.setFullYear(thisYear + 1);
+  }
+
+  const daysSinceLast = daysBetween(lastBirthday, now); // 0..364
+  const daysUntilNext = daysBetween(now, nextBirthday); // 0..364
+
+  // If birthday was within last 14 days (but not today), belated
+  if (daysSinceLast >= 1 && daysSinceLast <= 14) {
+    return {
+      title: "Happy belated birthday!",
+      body: "Swimming is one of the best gifts you can get. Let’s make this year a confident, water-safe year.",
+    };
+  }
+
+  // If birthday is today or within next 14 days, happy birthday
+  if (daysUntilNext >= 0 && daysUntilNext <= 14) {
+    return {
+      title: "Happy birthday!",
+      body: "Swimming is the best gift you can give. Let’s get started and build confidence in the water.",
+    };
+  }
+
+  return null;
+}
+
 function computeLevel(state: LevelState): { levelKey?: LevelKey; reason?: string } {
   if (!state.birthday) return {};
 
@@ -268,25 +312,31 @@ function computeLevel(state: LevelState): { levelKey?: LevelKey; reason?: string
   const months = monthsBetween(dob, now);
   const years = yearsBetween(dob, now);
 
-  // Ages 4 to 36 months
-  if (months >= 4 && months <= 36) {
-    // Under 24 months (under 2 years): always ParentTot, no qualifying question
-    if (months < 24) {
-      return { levelKey: "PARENTTOT", reason: "Under 2 years old. ParentTot is the best fit." };
-    }
+  // Under 4 months: not eligible
+  if (months < 4) return {};
 
-    // 24 to 36 months: ask whether parent is in water
-    if (state.parentInWater === true) return { levelKey: "PARENTTOT", reason: "Toddler age with parent in the water." };
-    if (state.parentInWater === false) return { levelKey: "TODDLER_TRANSITION", reason: "Toddler age in independent group format." };
+  // 4–23 months: ALWAYS ParentTot
+  if (months >= 4 && months < 24) {
+    return { levelKey: "PARENTTOT", reason: "4–23 months. ParentTot is the best fit." };
+  }
+
+  // 24–36 months: ParentTot vs Toddler Transition based on parentInWater
+  if (months >= 24 && months <= 36) {
+    if (state.parentInWater === true) {
+      return { levelKey: "PARENTTOT", reason: "Toddler age with parent in the water." };
+    }
+    if (state.parentInWater === false) {
+      return { levelKey: "TODDLER_TRANSITION", reason: "Toddler age in independent group format." };
+    }
     return {};
   }
 
-  // Adults (16+) can qualify into Adult 2
+  // 16+: ALWAYS Adult 1
   if (years >= 16) {
-    const advanced = state.s7_freestyleSideBreath12 === true || state.s8_backstroke12 === true;
-    return { levelKey: advanced ? "ADULT_2" : "ADULT_1", reason: "Swimmer is 16+." };
+    return { levelKey: "ADULT_1", reason: "Swimmer is 16+." };
   }
 
+  // 2 years to under 16: normal skill flow
   const no = (k: keyof LevelState) => state[k] === false;
 
   if (no("s1_bubbles5")) return { levelKey: "BEGINNER_1", reason: "Face-in-water comfort is still developing." };
@@ -338,7 +388,6 @@ const LOCATION_PORTAL: Record<LocationName, string> = {
   "SafeSplash Summerlin": "https://portal.iclasspro.com/lasvegassummerlinnv/classes",
 };
 
-// Replace any SafeSplash ones if you want different numbers/emails.
 const LOCATION_CONTACT: Record<LocationName, { brand: "SwimLabs" | "SafeSplash"; phone: string; email: string }> = {
   "SwimLabs Westchester": { brand: "SwimLabs", phone: "914-800-7946", email: "westchester-ny@swimlabs.com" },
   "SwimLabs The Woodlands": { brand: "SwimLabs", phone: "(281) 688-5993", email: "the-woodlands-north-tx@swimlabs.com" },
@@ -486,8 +535,8 @@ function ContactBanner({
 
   const headline =
     variant === "landing"
-      ? "Dive in for free: Book your first lesson today with zero obligation and no credit card required."
-      : "Great job. Let’s get you in for a free, no-obligation trial and put those skills to the test.";
+      ? "Free trial available. Call or text us today."
+      : "Great job filling this out. Let’s get you in for a free, no-obligation trial and put those skills to the test.";
 
   return (
     <div className="mt-6 rounded-2xl border border-teal-200 bg-teal-50 p-5">
@@ -506,6 +555,37 @@ function ContactBanner({
         <div className="mt-3 text-sm font-medium text-slate-800">
           Tip: Send us your availability and we’ll match you to the best class.
         </div>
+      </div>
+    </div>
+  );
+}
+
+function Modal({
+  open,
+  title,
+  body,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  body: string;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
+        <div className="text-xl font-extrabold text-slate-900">{title}</div>
+        <div className="mt-3 whitespace-pre-wrap text-slate-800">{body}</div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-6 h-12 w-full rounded-xl bg-teal-700 font-semibold text-white hover:bg-teal-800"
+        >
+          Got it
+        </button>
       </div>
     </div>
   );
@@ -570,6 +650,7 @@ export default function Page() {
   // UI helpers
   const [toast, setToast] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [tooYoungOpen, setTooYoungOpen] = useState(false);
 
   const resultsRef = useRef<HTMLDivElement | null>(null);
 
@@ -582,6 +663,13 @@ export default function Page() {
 
   const portalUrl = location ? LOCATION_PORTAL[location] : "";
   const contact = location ? LOCATION_CONTACT[location] : null;
+
+  const birthdayGreeting = useMemo(() => {
+    if (!level.birthday) return null;
+    const dob = new Date(level.birthday + "T00:00:00");
+    const now = new Date();
+    return getBirthdayGreeting(dob, now);
+  }, [level.birthday]);
 
   const resetAll = () => {
     setStage("landing");
@@ -603,6 +691,7 @@ export default function Page() {
 
     setComments("");
     setToast(null);
+    setTooYoungOpen(false);
   };
 
   const landingValid =
@@ -632,25 +721,32 @@ export default function Page() {
     const months = monthsBetween(dob, now);
     const years = yearsBetween(dob, now);
 
-    // Under 2 (4–23 months): ParentTot auto, go to comments
+    // Under 4 months: popup + stop
+    if (months < 4) {
+      setTooYoungOpen(true);
+      return;
+    }
+
+    // 4–23 months: ParentTot auto, go to comments
     if (months >= 4 && months < 24) {
       setStage("comments");
       return;
     }
 
-    // 24–36 months: only then require parentInWater
+    // 24–36 months: require parentInWater, then go to comments
     if (months >= 24 && months <= 36) {
       if (level.parentInWater !== true && level.parentInWater !== false) return;
       setStage("comments");
       return;
     }
 
-    // Adults: they can qualify on this page via the optional questions, then go to comments
+    // 16+: auto Adult 1, go to comments
     if (years >= 16) {
       setStage("comments");
       return;
     }
 
+    // 2–15 years: normal skill flow
     setStage("skills");
   };
 
@@ -989,6 +1085,14 @@ export default function Page() {
                 />
               </div>
 
+              {/* Birthday greeting based on month/day relative to today */}
+              {birthdayGreeting && (
+                <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
+                  <div className="text-sm font-semibold text-amber-900">{birthdayGreeting.title}</div>
+                  <div className="mt-2 text-slate-900 font-semibold">{birthdayGreeting.body}</div>
+                </div>
+              )}
+
               {/* Parent-in-water only for 24–36 months */}
               {level.birthday && (() => {
                 const dob = new Date(level.birthday + "T00:00:00");
@@ -1008,45 +1112,6 @@ export default function Page() {
                 );
               })()}
 
-              {/* Adult qualifiers (optional) */}
-              {level.birthday && (() => {
-                const dob = new Date(level.birthday + "T00:00:00");
-                const now = new Date();
-                const years = yearsBetween(dob, now);
-                if (years < 16) return null;
-
-                return (
-                  <div className="mt-8 grid gap-4">
-                    <div className="rounded-xl border border-slate-300 bg-white p-5">
-                      <div className="text-lg font-extrabold text-slate-900">Adult placement (optional but helpful)</div>
-                      <div className="mt-2 text-slate-900">
-                        Answer these so we can place you in Adult 1 or Adult 2.
-                      </div>
-                    </div>
-
-                    <div className="rounded-xl border border-slate-300 bg-white p-5">
-                      <div className="text-base font-semibold text-slate-900">
-                        Can you breathe to the side in freestyle for 12 arm strokes?
-                      </div>
-                      <YesNo
-                        onYes={() => setLevel((s) => ({ ...s, s7_freestyleSideBreath12: true }))}
-                        onNo={() => setLevel((s) => ({ ...s, s7_freestyleSideBreath12: false }))}
-                      />
-                    </div>
-
-                    <div className="rounded-xl border border-slate-300 bg-white p-5">
-                      <div className="text-base font-semibold text-slate-900">
-                        Can you do backstroke for 12 arm strokes?
-                      </div>
-                      <YesNo
-                        onYes={() => setLevel((s) => ({ ...s, s8_backstroke12: true }))}
-                        onNo={() => setLevel((s) => ({ ...s, s8_backstroke12: false }))}
-                      />
-                    </div>
-                  </div>
-                );
-              })()}
-
               <PrimaryButton
                 label="Continue"
                 disabled={
@@ -1055,6 +1120,9 @@ export default function Page() {
                     const dob = new Date((level.birthday ?? "") + "T00:00:00");
                     const now = new Date();
                     const months = monthsBetween(dob, now);
+
+                    // Under 4 months: block continue (popup handles messaging)
+                    if (months < 4) return false; // keep enabled so they can click and see the popup
 
                     // Only require parentInWater for 24–36 months
                     if (months >= 24 && months <= 36) {
@@ -1182,7 +1250,6 @@ export default function Page() {
                 </p>
               </div>
 
-              {/* Friendly CTA banner at top of results */}
               <ContactBanner location={location} contact={contact} variant="results" />
 
               {/* Export area */}
@@ -1355,6 +1422,15 @@ export default function Page() {
             {toast}
           </div>
         )}
+
+        <Modal
+          open={tooYoungOpen}
+          title="A little too young (for now)"
+          body={
+            "We’re so glad you found us.\n\nOur lessons start at 4 months.\n\nAs a welcome gift for you and your little one: your first month is on us when you’re eligible.\n\nText us anytime and we’ll help you line up the perfect start date."
+          }
+          onClose={() => setTooYoungOpen(false)}
+        />
       </div>
     </main>
   );
