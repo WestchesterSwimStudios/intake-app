@@ -22,24 +22,18 @@ export async function POST(req: Request) {
       levelRatio,
       levelReason,
       comments,
-    } = body;
+    } = body ?? {};
 
-    if (
-      !parentName ||
-      !location ||
-      !contactMethod ||
-      !contactValue ||
-      !instructorPrimary
-    ) {
-      return new Response(
-        JSON.stringify({ ok: false, error: "Missing required fields" }),
-        { status: 400 }
-      );
+    if (!parentName || !location || !contactMethod || !contactValue || !instructorPrimary) {
+      return new Response(JSON.stringify({ ok: false, error: "Missing required fields" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT),
+      port: Number(process.env.SMTP_PORT || 587),
       secure: false,
       auth: {
         user: process.env.SMTP_USER,
@@ -47,9 +41,7 @@ export async function POST(req: Request) {
       },
     });
 
-    const subject = `[New Intake] ${location} | ${instructorPrimary} | Code ${
-      internalCode ?? "?"
-    }`;
+    const subject = `[New Intake] ${location} | ${instructorPrimary} | Code ${internalCode ?? "?"}`;
 
     const text = `
 NEW INTAKE SUBMISSION
@@ -87,16 +79,22 @@ ${comments || "None"}
 `.trim();
 
     await transporter.sendMail({
-      from: process.env.SMTP_FROM,
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
       to: process.env.INTAKE_TO_EMAIL,
       subject,
       text,
       replyTo: process.env.INTAKE_TO_EMAIL,
     });
 
-    return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   } catch (err) {
     console.error("Intake submit failed:", err);
-    return new Response(
-      JSON.stringify({ ok: false, error: "Server error" }),
-      { status: 500 }
+    return new Response(JSON.stringify({ ok: false, error: "Server error" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+}
