@@ -268,14 +268,20 @@ function computeLevel(state: LevelState): { levelKey?: LevelKey; reason?: string
   const months = monthsBetween(dob, now);
   const years = yearsBetween(dob, now);
 
-  // ParentTot vs Toddler Transition: 4 to 36 months
+  // Ages 4 to 36 months
   if (months >= 4 && months <= 36) {
-    if (state.parentInWater === true) return { levelKey: "PARENTTOT", reason: "Under 36 months and parent in water." };
-    if (state.parentInWater === false) return { levelKey: "TODDLER_TRANSITION", reason: "Under 36 months and independent format." };
+    // Under 24 months (under 2 years): always ParentTot, no qualifying question
+    if (months < 24) {
+      return { levelKey: "PARENTTOT", reason: "Under 2 years old. ParentTot is the best fit." };
+    }
+
+    // 24 to 36 months: ask whether parent is in water
+    if (state.parentInWater === true) return { levelKey: "PARENTTOT", reason: "Toddler age with parent in the water." };
+    if (state.parentInWater === false) return { levelKey: "TODDLER_TRANSITION", reason: "Toddler age in independent group format." };
     return {};
   }
 
-  // Adults
+  // Adults (16+) can qualify into Adult 2
   if (years >= 16) {
     const advanced = state.s7_freestyleSideBreath12 === true || state.s8_backstroke12 === true;
     return { levelKey: advanced ? "ADULT_2" : "ADULT_1", reason: "Swimmer is 16+." };
@@ -332,12 +338,10 @@ const LOCATION_PORTAL: Record<LocationName, string> = {
   "SafeSplash Summerlin": "https://portal.iclasspro.com/lasvegassummerlinnv/classes",
 };
 
-// You provided these two. Replace the SafeSplash ones if you want different numbers/emails.
+// Replace any SafeSplash ones if you want different numbers/emails.
 const LOCATION_CONTACT: Record<LocationName, { brand: "SwimLabs" | "SafeSplash"; phone: string; email: string }> = {
   "SwimLabs Westchester": { brand: "SwimLabs", phone: "914-800-7946", email: "westchester-ny@swimlabs.com" },
   "SwimLabs The Woodlands": { brand: "SwimLabs", phone: "(281) 688-5993", email: "the-woodlands-north-tx@swimlabs.com" },
-
-  // If these need to be exact, replace here with your official contact info.
   "SafeSplash Riverdale": { brand: "SafeSplash", phone: "914-215-1683", email: "yonkers-riverdale-ny@safesplash.com" },
   "SafeSplash Santa Monica": { brand: "SafeSplash", phone: "424-282-4301", email: "santa-monica-sunset-park-ca@safesplash.com" },
   "SafeSplash Torrance": { brand: "SafeSplash", phone: "424-282-4304", email: "torrance-del-amo-ca@safesplash.com" },
@@ -469,10 +473,47 @@ function OptionButton({ onClick, children }: { onClick: () => void; children: Re
   );
 }
 
+function ContactBanner({
+  location,
+  contact,
+  variant,
+}: {
+  location: LocationName | "";
+  contact: { brand: "SwimLabs" | "SafeSplash"; phone: string; email: string } | null;
+  variant: "landing" | "results";
+}) {
+  if (!location || !contact) return null;
+
+  const headline =
+    variant === "landing"
+      ? "Free trial available. Call or text us today."
+      : "Great job. Let’s get you in for a free, no-obligation trial and put those skills to the test.";
+
+  return (
+    <div className="mt-6 rounded-2xl border border-teal-200 bg-teal-50 p-5">
+      <div className="text-sm font-semibold text-teal-900">{contact.brand}</div>
+      <div className="mt-1 text-lg font-extrabold text-slate-900">{headline}</div>
+      <div className="mt-3 text-slate-900">
+        <div>
+          <span className="font-semibold">Location:</span> {location}
+        </div>
+        <div className="mt-1">
+          <span className="font-semibold">Phone:</span> {contact.phone}
+        </div>
+        <div className="mt-1">
+          <span className="font-semibold">Email:</span> {contact.email}
+        </div>
+        <div className="mt-3 text-sm font-medium text-slate-800">
+          Tip: Send us your availability and we’ll match you to the best class.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* --------------------------- Clipboard helpers ---------------------------- */
 
 async function copyTextSmart(text: string) {
-  // 1) Best path: Clipboard API (works in many browsers, but can fail on iOS without https and user gesture)
   try {
     if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
       await navigator.clipboard.writeText(text);
@@ -482,7 +523,6 @@ async function copyTextSmart(text: string) {
     // fall through
   }
 
-  // 2) Fallback: hidden textarea + execCommand
   try {
     const ta = document.createElement("textarea");
     ta.value = text;
@@ -592,12 +632,20 @@ export default function Page() {
     const months = monthsBetween(dob, now);
     const years = yearsBetween(dob, now);
 
-    if (months >= 4 && months <= 36) {
+    // Under 2 (4–23 months): ParentTot auto, go to comments
+    if (months >= 4 && months < 24) {
+      setStage("comments");
+      return;
+    }
+
+    // 24–36 months: only then require parentInWater
+    if (months >= 24 && months <= 36) {
       if (level.parentInWater !== true && level.parentInWater !== false) return;
       setStage("comments");
       return;
     }
 
+    // Adults: they can qualify on this page via the optional questions, then go to comments
     if (years >= 16) {
       setStage("comments");
       return;
@@ -729,7 +777,7 @@ export default function Page() {
 
   return (
     <main className="min-h-screen relative overflow-hidden">
-      {/* Pool themed background */}
+      {/* Light-mode prioritized background */}
       <div className="absolute inset-0 bg-gradient-to-b from-cyan-50 via-sky-100 to-teal-100" />
       <div className="absolute -top-40 -left-40 h-[420px] w-[420px] rounded-full bg-cyan-200/50 blur-3xl" />
       <div className="absolute top-20 -right-48 h-[520px] w-[520px] rounded-full bg-teal-200/40 blur-3xl" />
@@ -787,6 +835,11 @@ export default function Page() {
                       ))}
                     </select>
                   </label>
+
+                  {/* Contact banner appears as soon as a location is selected */}
+                  <div className="sm:col-span-2">
+                    <ContactBanner location={location} contact={contact} variant="landing" />
+                  </div>
 
                   <label className="grid gap-2">
                     <span className="text-sm font-semibold text-slate-900">Best day for booking</span>
@@ -936,11 +989,13 @@ export default function Page() {
                 />
               </div>
 
+              {/* Parent-in-water only for 24–36 months */}
               {level.birthday && (() => {
                 const dob = new Date(level.birthday + "T00:00:00");
                 const now = new Date();
                 const months = monthsBetween(dob, now);
-                if (months < 4 || months > 36) return null;
+
+                if (months < 24 || months > 36) return null;
 
                 return (
                   <div className="mt-8 rounded-xl border border-slate-300 bg-white p-5">
@@ -953,6 +1008,45 @@ export default function Page() {
                 );
               })()}
 
+              {/* Adult qualifiers (optional) */}
+              {level.birthday && (() => {
+                const dob = new Date(level.birthday + "T00:00:00");
+                const now = new Date();
+                const years = yearsBetween(dob, now);
+                if (years < 16) return null;
+
+                return (
+                  <div className="mt-8 grid gap-4">
+                    <div className="rounded-xl border border-slate-300 bg-white p-5">
+                      <div className="text-lg font-extrabold text-slate-900">Adult placement (optional but helpful)</div>
+                      <div className="mt-2 text-slate-900">
+                        Answer these so we can place you in Adult 1 or Adult 2.
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-300 bg-white p-5">
+                      <div className="text-base font-semibold text-slate-900">
+                        Can you breathe to the side in freestyle for 12 arm strokes?
+                      </div>
+                      <YesNo
+                        onYes={() => setLevel((s) => ({ ...s, s7_freestyleSideBreath12: true }))}
+                        onNo={() => setLevel((s) => ({ ...s, s7_freestyleSideBreath12: false }))}
+                      />
+                    </div>
+
+                    <div className="rounded-xl border border-slate-300 bg-white p-5">
+                      <div className="text-base font-semibold text-slate-900">
+                        Can you do backstroke for 12 arm strokes?
+                      </div>
+                      <YesNo
+                        onYes={() => setLevel((s) => ({ ...s, s8_backstroke12: true }))}
+                        onNo={() => setLevel((s) => ({ ...s, s8_backstroke12: false }))}
+                      />
+                    </div>
+                  </div>
+                );
+              })()}
+
               <PrimaryButton
                 label="Continue"
                 disabled={
@@ -961,7 +1055,9 @@ export default function Page() {
                     const dob = new Date((level.birthday ?? "") + "T00:00:00");
                     const now = new Date();
                     const months = monthsBetween(dob, now);
-                    if (months >= 4 && months <= 36) {
+
+                    // Only require parentInWater for 24–36 months
+                    if (months >= 24 && months <= 36) {
                       return level.parentInWater !== true && level.parentInWater !== false;
                     }
                     return false;
@@ -1047,7 +1143,6 @@ export default function Page() {
                 <div className="mt-2 flex justify-between gap-3">
                   <SecondaryButton
                     onClick={() => {
-                      // go back to last level step
                       if (!level.birthday) {
                         setStage("age");
                         return;
@@ -1059,7 +1154,6 @@ export default function Page() {
                         setStage("age");
                         return;
                       }
-                      // if we made it through skills/endurance, go back to endurance if it was asked, else skills
                       if (skillIndex >= SKILL_QUESTIONS.length - 1) {
                         setStage("endurance");
                         return;
@@ -1088,6 +1182,9 @@ export default function Page() {
                 </p>
               </div>
 
+              {/* Friendly CTA banner at top of results */}
+              <ContactBanner location={location} contact={contact} variant="results" />
+
               {/* Export area */}
               <div ref={resultsRef} className="mt-6 rounded-2xl border border-white/40 bg-white p-8 shadow-lg">
                 <div className="flex items-start justify-between gap-4">
@@ -1106,12 +1203,7 @@ export default function Page() {
                   </div>
 
                   <div className="hidden sm:block">
-                    {/* Use <img> in export area for reliable PNG */}
-                    <img
-                      src="/brand-logo.png"
-                      alt="SafeSplash + SwimLabs"
-                      className="h-auto w-[240px]"
-                    />
+                    <img src="/brand-logo.png" alt="SafeSplash + SwimLabs" className="h-auto w-[240px]" />
                   </div>
                 </div>
 
@@ -1235,12 +1327,7 @@ export default function Page() {
               )}
 
               <div className="mt-8 flex flex-wrap gap-3">
-                <SecondaryButton
-                  onClick={() => {
-                    setStage("comments");
-                  }}
-                  label="Edit Comments"
-                />
+                <SecondaryButton onClick={() => setStage("comments")} label="Edit Comments" />
                 <SecondaryButton
                   onClick={() => {
                     setStage("age");
