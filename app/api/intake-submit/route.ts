@@ -1,4 +1,4 @@
-import nodemailer from "nodemailer";
+export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
@@ -30,6 +30,10 @@ export async function POST(req: Request) {
         headers: { "Content-Type": "application/json" },
       });
     }
+
+    // Lazy import fixes Turbopack issues with certain Node libraries
+    const nodemailerMod = await import("nodemailer");
+    const nodemailer = nodemailerMod.default;
 
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
@@ -83,7 +87,6 @@ ${comments || "None"}
       to: process.env.INTAKE_TO_EMAIL,
       subject,
       text,
-      replyTo: process.env.INTAKE_TO_EMAIL,
     });
 
     return new Response(JSON.stringify({ ok: true }), {
