@@ -1,29 +1,66 @@
 "use client";
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { toPng } from "html-to-image";
 
-/* ----------------------------- Types ----------------------------- */
-
-type AnswerKey = "A" | "B" | "C" | "D";
-type ParentType = "supersonic" | "high_maintenance" | "extra_attention" | "budget";
-type MatchState = { q1?: AnswerKey; q2?: AnswerKey; q3?: AnswerKey; q4?: AnswerKey };
-
-type InstructorType = "structured" | "coaching" | "free_spirit" | "patient";
+/* --------------------------------- Types --------------------------------- */
 
 type Stage = "landing" | "match" | "age" | "skills" | "endurance" | "comments" | "results";
 type ContactMethod = "email" | "phone" | "";
 
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Saturday", "Sunday"] as const;
+type AnswerKey = "A" | "B" | "C" | "D";
+type ParentType = "supersonic" | "high_maintenance" | "extra_attention" | "budget";
 
-const TIME_WINDOWS = [
-  "Morning (9am–12pm, Weekends Only)",
-  "Early Afternoon (12pm–4pm, All Days)",
-  "Afternoon (4pm–6pm, Weekdays Only)",
-  "Evening (6pm–8pm, Weekdays Only)",
-  "Flexible",
-] as const;
+type MatchState = { q1?: AnswerKey; q2?: AnswerKey; q3?: AnswerKey; q4?: AnswerKey };
+
+type InternalCode = "A" | "B" | "C" | "D";
+
+type InstructorType = "structured" | "coaching" | "free_spirit" | "patient";
+
+type InstructorDisplay = {
+  title: string; // customer-facing
+  vibe: string;
+  bullets: string[];
+};
+
+type LevelKey =
+  | "PARENTTOT"
+  | "TODDLER_TRANSITION"
+  | "BEGINNER_1"
+  | "BEGINNER_2"
+  | "BEGINNER_3"
+  | "BEGINNER_4"
+  | "INTERMEDIATE_1"
+  | "INTERMEDIATE_2"
+  | "INTERMEDIATE_3"
+  | "ADVANCED_1"
+  | "ADVANCED_2"
+  | "ADULT_1"
+  | "ADULT_2";
+
+type LevelState = {
+  birthday?: string;
+  parentInWater?: boolean;
+  s1_bubbles5?: boolean;
+  s2_backFloatSupport?: boolean;
+  s3_floatFrontBackInd?: boolean;
+  s4_kickFrontWithDeviceEyesIn?: boolean;
+  s5_kickFrontBackInd?: boolean;
+  s6_sixArmStrokesFreeBack?: boolean;
+  s7_freestyleSideBreath12?: boolean;
+  s8_backstroke12?: boolean;
+  s9_freeSideBreathAndBack25yd?: boolean;
+  s10_breastKickPro?: boolean;
+  s11_breastAndDolphinPro?: boolean;
+  s12_flipAndOpenTurnsIntro?: boolean;
+  s13_allStrokesAndTurnsPro?: boolean;
+  enduranceStrong?: boolean;
+};
+
+type SkillQuestion = { key: keyof LevelState; text: string };
+
+/* ------------------------------- Constants -------------------------------- */
 
 const LOCATIONS = [
   "SwimLabs Westchester",
@@ -54,70 +91,24 @@ const LOCATION_CONTACT: Record<LocationName, { brand: "SwimLabs" | "SafeSplash";
   "SafeSplash Summerlin": { brand: "SafeSplash", phone: "702-291-1937", email: "las-vegas-summerlin-nv@safesplash.com" },
 };
 
-/* -------------------------- Customer → Internal Code -------------------------- */
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Saturday", "Sunday"] as const;
 
-const ANSWER_TO_PARENT: Record<AnswerKey, ParentType> = {
+const TIME_WINDOWS = [
+  "Morning (9am–12pm, Weekends Only)",
+  "Early Afternoon (12pm–4pm, All Days)",
+  "Afternoon (4pm–6pm, Weekdays Only)",
+  "Evening (6pm–8pm, Weekdays Only)",
+  "Flexible",
+] as const;
+
+/* --------------------------- Customer Match Quiz -------------------------- */
+
+const MATCH_MAP: Record<AnswerKey, ParentType> = {
   A: "supersonic",
   B: "high_maintenance",
   C: "extra_attention",
   D: "budget",
 };
-
-const PARENT_TO_LETTER: Record<ParentType, "A" | "B" | "C" | "D"> = {
-  supersonic: "A",
-  high_maintenance: "B",
-  extra_attention: "C",
-  budget: "D",
-};
-
-const INTERNAL_OPS_COPY: Record<"A" | "B" | "C" | "D", { label: string; ops: string }> = {
-  A: { label: "Supersonic", ops: "Time/results driven. Needs progress checkpoints." },
-  B: { label: "High Maintenance", ops: "Wants structure, explanations, best-of-best." },
-  C: { label: "Extra Attention", ops: "Emotionally invested. Instructor consistency matters." },
-  D: { label: "Budget", ops: "Cost-sensitive. Needs value + visible progress fast." },
-};
-
-/* -------------------------- Customer → Instructor Match -------------------------- */
-
-const INSTRUCTOR_DISPLAY: Record<
-  InstructorType,
-  { name: string; summary: string; bullets: string[] }
-> = {
-  structured: {
-    name: "Structured Sam / Steven",
-    summary:
-      "Clear structure, consistent routines, and steady progress. Great when you want a predictable lesson flow and a plan you can trust.",
-    bullets: ["Consistent routine", "Clear skill progression", "Calm, steady coaching"],
-  },
-  coaching: {
-    name: "Coaching Carly / Cameron",
-    summary:
-      "Goal-driven coaching that keeps things moving. Great when you want fast feedback, milestones, and momentum.",
-    bullets: ["Motivating + efficient", "Progress checkpoints", "Challenge-ready when appropriate"],
-  },
-  free_spirit: {
-    name: "Free Spirit Franny / Frank",
-    summary:
-      "Playful, light, and confidence-building through fun. Great when your swimmer thrives with relaxed energy and joy-first lessons.",
-    bullets: ["Fun-first engagement", "Comfort-driven progress", "Keeps it light and positive"],
-  },
-  patient: {
-    name: "Patient Pat / Paul",
-    summary:
-      "Warm, reassuring, and confidence-focused. Great when your swimmer needs encouragement, patience, and a calm presence.",
-    bullets: ["Very encouraging", "Great with nervous swimmers", "Strong rapport and reassurance"],
-  },
-};
-
-// Recommendation logic based on internal customer type (kept private)
-const RECOMMENDATION: Record<ParentType, { primary: InstructorType; alternate?: InstructorType }> = {
-  supersonic: { primary: "coaching", alternate: "structured" }, // SuperSonic -> Coaching or Structured
-  high_maintenance: { primary: "structured" },                  // High Maintenance -> Structured
-  extra_attention: { primary: "patient" },                      // Extra Attention -> Patient
-  budget: { primary: "free_spirit", alternate: "patient" },     // Budget -> Free Spirit or Patient
-};
-
-/* -------------------------- Questions (customer-facing) -------------------------- */
 
 const MATCH_QUESTIONS = [
   {
@@ -155,7 +146,7 @@ const MATCH_QUESTIONS = [
     title: "If you had a concern about lessons, what would you most likely ask?",
     options: [
       { key: "A", text: "How long until we see progress?" },
-      { key: "B", text: "Can I speak with a manager or learn more about the instructor/curriculum?" },
+      { key: "B", text: "Can I learn more about the instructor/curriculum?" },
       { key: "C", text: "Can we talk through what I’m noticing with my child?" },
       { key: "D", text: "Are there alternative pricing options?" },
     ] as { key: AnswerKey; text: string }[],
@@ -170,54 +161,67 @@ function computeMatchScores(state: MatchState) {
     budget: 0,
   };
 
-  // Weighted to lean toward priorities over logistics
-  const w = { q1: 40, q2: 25, q3: 25, q4: 10 };
+  // Keep Q1 weighted highest
+  const w = { q1: 40, q2: 30, q3: 20, q4: 10 };
 
-  if (state.q1) scores[ANSWER_TO_PARENT[state.q1]] += w.q1;
-  if (state.q2) scores[ANSWER_TO_PARENT[state.q2]] += w.q2;
-  if (state.q3) scores[ANSWER_TO_PARENT[state.q3]] += w.q3;
-  if (state.q4) scores[ANSWER_TO_PARENT[state.q4]] += w.q4;
+  if (state.q1) scores[MATCH_MAP[state.q1]] += w.q1;
+  if (state.q2) scores[MATCH_MAP[state.q2]] += w.q2;
+  if (state.q3) scores[MATCH_MAP[state.q3]] += w.q3;
+  if (state.q4) scores[MATCH_MAP[state.q4]] += w.q4;
 
   return scores;
 }
 
-function pickWinner(state: MatchState) {
+function pickParentType(state: MatchState) {
   const scores = computeMatchScores(state);
   const answers = [state.q1, state.q2, state.q3, state.q4];
   if (answers.some((a) => !a)) return { winner: undefined as ParentType | undefined, scores };
 
-  const sorted = (Object.entries(scores) as [ParentType, number][])
-    .sort((a, b) => b[1] - a[1]);
-
+  const sorted = (Object.entries(scores) as [ParentType, number][]).sort((a, b) => b[1] - a[1]);
   return { winner: sorted[0][0], scores };
 }
 
-function getInstructorMatchFromWinner(winner: ParentType | undefined) {
-  if (!winner) return null;
-
-  const rec = RECOMMENDATION[winner];
-  const primary = INSTRUCTOR_DISPLAY[rec.primary];
-  const alternate = rec.alternate ? INSTRUCTOR_DISPLAY[rec.alternate] : undefined;
-
-  return { primary, alternate, internalLetter: PARENT_TO_LETTER[winner] as "A" | "B" | "C" | "D" };
+function parentTypeToInternalCode(t: ParentType): InternalCode {
+  if (t === "supersonic") return "A";
+  if (t === "high_maintenance") return "B";
+  if (t === "extra_attention") return "C";
+  return "D";
 }
 
-/* -------------------------------- Level Finder ---------------------------- */
+/* ------------------------ Instructor Types (Cute) ------------------------- */
 
-type LevelKey =
-  | "PARENTTOT"
-  | "TODDLER_TRANSITION"
-  | "BEGINNER_1"
-  | "BEGINNER_2"
-  | "BEGINNER_3"
-  | "BEGINNER_4"
-  | "INTERMEDIATE_1"
-  | "INTERMEDIATE_2"
-  | "INTERMEDIATE_3"
-  | "ADVANCED_1"
-  | "ADVANCED_2"
-  | "ADULT_1"
-  | "ADULT_2";
+const INSTRUCTOR_DISPLAY: Record<InstructorType, InstructorDisplay> = {
+  structured: {
+    title: "Structured Sam / Steven",
+    vibe: "Clear structure, calm pacing, consistent routines.",
+    bullets: ["Predictable lesson flow", "Steady progress week to week", "Great for detail-focused families"],
+  },
+  coaching: {
+    title: "Coaching Carly / Cameron",
+    vibe: "Motivating, milestone-driven, keeps momentum high.",
+    bullets: ["Progress checkpoints", "Goal-oriented coaching", "Great for fast-moving families"],
+  },
+  free_spirit: {
+    title: "Free Spirit Franny / Frank",
+    vibe: "Playful and flexible, makes the pool feel fun and easy.",
+    bullets: ["Relaxed confidence building", "Joy-first approach", "Great for nervous swimmers who open up through play"],
+  },
+  patient: {
+    title: "Patient Pat / Paul",
+    vibe: "Encouraging, reassuring, confidence-focused.",
+    bullets: ["Gentle coaching", "Great with anxiety and reassurance", "Consistency + comfort"],
+  },
+};
+
+function mapParentToInstructor(t: ParentType): { primary: InstructorType; secondary?: InstructorType } {
+  // Your quick guide, expressed as instructor types.
+  if (t === "supersonic") return { primary: "coaching", secondary: "structured" };
+  if (t === "high_maintenance") return { primary: "structured" };
+  if (t === "extra_attention") return { primary: "patient" };
+  return { primary: "free_spirit", secondary: "patient" }; // budget
+}
+
+/* ------------------------------- Level Finder ----------------------------- */
 
 const LEVELS: Record<LevelKey, { title: string; ratio: string; description: string }> = {
   PARENTTOT: {
@@ -230,98 +234,33 @@ const LEVELS: Record<LevelKey, { title: string; ratio: string; description: stri
     ratio: "3:1 Ratio",
     description: "Swimmers learn fundamental safety and comfort skills in a parent-free group format, with repetition and encouragement.",
   },
-  BEGINNER_1: {
-    title: "BEGINNER 1 – Introduction to Water Safety and Swimming Foundations",
-    ratio: "4:1 Ratio",
-    description: "Fun-focused fundamentals: body position and kicking to build a strong swimming foundation.",
-  },
-  BEGINNER_2: {
-    title: "BEGINNER 2 – Water Safety and Swimming Foundations",
-    ratio: "4:1 Ratio",
-    description: "SSP journey begins: essential water safety and confidence in self-rescue and independent swimming.",
-  },
-  BEGINNER_3: {
-    title: "BEGINNER 3 – Water Safety and Basic Strokes",
-    ratio: "4:1 Ratio",
-    description: "Refines safety skills and begins combining them with basic strokes and propulsion skills.",
-  },
-  BEGINNER_4: {
-    title: "BEGINNER 4 – Water Safety and Stroke Development",
-    ratio: "4:1 Ratio",
-    description: "Swimmers are ready to pass SSP Test and develop freestyle side breathing and backstroke further.",
-  },
-  INTERMEDIATE_1: {
-    title: "INTERMEDIATE 1 – Freestyle, Backstroke, Intro to Breaststroke",
-    ratio: "4:1 Ratio",
-    description: "Endurance and technique work with intro to breaststroke kick, plus ongoing safety skill reinforcement.",
-  },
-  INTERMEDIATE_2: {
-    title: "INTERMEDIATE 2 – Breaststroke + Intro to Butterfly",
-    ratio: "4:1 Ratio",
-    description: "Refines breaststroke and introduces butterfly through dolphin kick progressions, plus self-rescue stamina.",
-  },
-  INTERMEDIATE_3: {
-    title: "INTERMEDIATE 3 – All Four Strokes Technique",
-    ratio: "4:1 Ratio",
-    description: "Refines all four strokes with drills, technique, strength, and endurance development.",
-  },
-  ADVANCED_1: {
-    title: "ADVANCED 1 – Technique Refinement & Proficiency",
-    ratio: "4:1 Ratio",
-    description: "Builds stamina across four strokes while refining technique for efficiency and longer distances.",
-  },
-  ADVANCED_2: {
-    title: "ADVANCED 2 – Endurance & Advanced Techniques",
-    ratio: "4:1 Ratio",
-    description: "Final level. Advanced refinement and efficient technique while swimming challenging distances.",
-  },
-  ADULT_1: {
-    title: "ADULT 1 – Learn-to-Swim",
-    ratio: "4:1 Ratio",
-    description: "Adults (16+) with no experience or fear of water learn basic safety skills and progress to freestyle.",
-  },
-  ADULT_2: {
-    title: "ADULT 2 – Learn-to-Swim",
-    ratio: "4:1 Ratio",
-    description: "Builds on Adult 1: freestyle with side breath, backstroke technique, and fundamentals of breaststroke.",
-  },
+  BEGINNER_1: { title: "BEGINNER 1 – Introduction to Water Safety and Swimming Foundations", ratio: "4:1 Ratio", description: "Fun-focused fundamentals to build comfort and foundation." },
+  BEGINNER_2: { title: "BEGINNER 2 – Water Safety and Swimming Foundations", ratio: "4:1 Ratio", description: "Confidence and essential safety skills for independent progress." },
+  BEGINNER_3: { title: "BEGINNER 3 – Water Safety and Basic Strokes", ratio: "4:1 Ratio", description: "Refines safety skills and begins combining with basic strokes." },
+  BEGINNER_4: { title: "BEGINNER 4 – Water Safety and Stroke Development", ratio: "4:1 Ratio", description: "Ready to develop breathing and stroke consistency further." },
+  INTERMEDIATE_1: { title: "INTERMEDIATE 1 – Freestyle, Backstroke, Intro to Breaststroke", ratio: "4:1 Ratio", description: "Endurance + technique with intro breaststroke progressions." },
+  INTERMEDIATE_2: { title: "INTERMEDIATE 2 – Breaststroke + Intro to Butterfly", ratio: "4:1 Ratio", description: "Refines breaststroke and introduces butterfly progressions." },
+  INTERMEDIATE_3: { title: "INTERMEDIATE 3 – All Four Strokes Technique", ratio: "4:1 Ratio", description: "Refines all four strokes with drills and endurance development." },
+  ADVANCED_1: { title: "ADVANCED 1 – Technique Refinement & Proficiency", ratio: "4:1 Ratio", description: "Builds stamina across strokes while refining technique." },
+  ADVANCED_2: { title: "ADVANCED 2 – Endurance & Advanced Techniques", ratio: "4:1 Ratio", description: "Final level: efficient technique while swimming challenging distances." },
+  ADULT_1: { title: "ADULT 1 – Learn-to-Swim", ratio: "4:1 Ratio", description: "Adults (16+) learn basic safety skills and progress to freestyle." },
+  ADULT_2: { title: "ADULT 2 – Learn-to-Swim", ratio: "4:1 Ratio", description: "Builds on Adult 1: breathing, backstroke, and intro breaststroke." },
 };
-
-type LevelState = {
-  birthday?: string;
-  parentInWater?: boolean;
-  s1_bubbles5?: boolean;
-  s2_backFloatSupport?: boolean;
-  s3_floatFrontBackInd?: boolean;
-  s4_kickFrontWithDeviceEyesIn?: boolean;
-  s5_kickFrontBackInd?: boolean;
-  s6_sixArmStrokesFreeBack?: boolean;
-  s7_freestyleSideBreath12?: boolean;
-  s8_backstroke12?: boolean;
-  s9_freeSideBreathAndBack25yd?: boolean;
-  s10_breastKickPro?: boolean;
-  s11_breastAndDolphinPro?: boolean;
-  s12_flipAndOpenTurnsIntro?: boolean;
-  s13_allStrokesAndTurnsPro?: boolean;
-  enduranceStrong?: boolean;
-};
-
-type SkillQuestion = { key: keyof LevelState; text: string };
 
 const SKILL_QUESTIONS: SkillQuestion[] = [
-  { key: "s1_bubbles5", text: "Can your swimmer submerge their face underwater, while blowing bubbles, for 5 seconds without hesitation?" },
+  { key: "s1_bubbles5", text: "Can your swimmer submerge their face and blow bubbles for 5 seconds without hesitation?" },
   { key: "s2_backFloatSupport", text: "Can your swimmer lie on their back with ears in the water and kick with support?" },
   { key: "s3_floatFrontBackInd", text: "Can your swimmer float on front and back independently?" },
   { key: "s4_kickFrontWithDeviceEyesIn", text: "Can they kick on their front with eyes in the water while holding a flotation device?" },
   { key: "s5_kickFrontBackInd", text: "Can your swimmer kick easily on their front and back independently?" },
   { key: "s6_sixArmStrokesFreeBack", text: "Can your swimmer perform 6 arm strokes of freestyle and backstroke independently?" },
-  { key: "s7_freestyleSideBreath12", text: "Can your swimmer easily breathe to the side in freestyle for 12 arm strokes?" },
+  { key: "s7_freestyleSideBreath12", text: "Can your swimmer breathe to the side in freestyle for 12 arm strokes?" },
   { key: "s8_backstroke12", text: "Can your swimmer do backstroke for 12 arm strokes?" },
   { key: "s9_freeSideBreathAndBack25yd", text: "Can your swimmer swim freestyle with side breathing and backstroke for 25 yards (75ft)?" },
   { key: "s10_breastKickPro", text: "Can your swimmer kick breaststroke proficiently?" },
   { key: "s11_breastAndDolphinPro", text: "Is your swimmer proficient at breaststroke and the dolphin kick?" },
-  { key: "s12_flipAndOpenTurnsIntro", text: "Has your swimmer been introduced to flip turns and open turns as means of changing directions in a pool?" },
-  { key: "s13_allStrokesAndTurnsPro", text: "Is your swimmer proficient at all four competitive strokes, flip turns and open turns?" },
+  { key: "s12_flipAndOpenTurnsIntro", text: "Has your swimmer been introduced to flip turns and open turns?" },
+  { key: "s13_allStrokesAndTurnsPro", text: "Is your swimmer proficient at all four strokes plus flip/open turns?" },
 ];
 
 function monthsBetween(dob: Date, now: Date) {
@@ -338,45 +277,6 @@ function yearsBetween(dob: Date, now: Date) {
   return years;
 }
 
-function daysBetween(a: Date, b: Date) {
-  const ms = 24 * 60 * 60 * 1000;
-  const utcA = Date.UTC(a.getFullYear(), a.getMonth(), a.getDate());
-  const utcB = Date.UTC(b.getFullYear(), b.getMonth(), b.getDate());
-  return Math.round((utcB - utcA) / ms);
-}
-
-function getBirthdayGreeting(dob: Date, now: Date): { title: string; body: string } | null {
-  const thisYear = now.getFullYear();
-  const thisYearsBirthday = new Date(thisYear, dob.getMonth(), dob.getDate());
-  const lastBirthday = new Date(thisYearsBirthday);
-  const nextBirthday = new Date(thisYearsBirthday);
-
-  if (thisYearsBirthday > now) {
-    lastBirthday.setFullYear(thisYear - 1);
-  } else {
-    nextBirthday.setFullYear(thisYear + 1);
-  }
-
-  const daysSinceLast = daysBetween(lastBirthday, now);
-  const daysUntilNext = daysBetween(now, nextBirthday);
-
-  if (daysSinceLast >= 1 && daysSinceLast <= 14) {
-    return {
-      title: "Happy belated birthday!",
-      body: "Swimming is one of the best gifts you can get. Let’s make this year a confident, water-safe year.",
-    };
-  }
-
-  if (daysUntilNext >= 0 && daysUntilNext <= 14) {
-    return {
-      title: "Happy birthday!",
-      body: "Swimming is the best gift you can give. Let’s get started and build confidence in the water.",
-    };
-  }
-
-  return null;
-}
-
 function computeLevel(state: LevelState): { levelKey?: LevelKey; reason?: string } {
   if (!state.birthday) return {};
 
@@ -385,7 +285,7 @@ function computeLevel(state: LevelState): { levelKey?: LevelKey; reason?: string
   const months = monthsBetween(dob, now);
   const years = yearsBetween(dob, now);
 
-  if (months < 4) return {};
+  if (months < 4) return {}; // too young
 
   if (months >= 4 && months < 24) {
     return { levelKey: "PARENTTOT", reason: "4–23 months. ParentTot is the best fit." };
@@ -397,9 +297,7 @@ function computeLevel(state: LevelState): { levelKey?: LevelKey; reason?: string
     return {};
   }
 
-  if (years >= 16) {
-    return { levelKey: "ADULT_1", reason: "Swimmer is 16+." };
-  }
+  if (years >= 16) return { levelKey: "ADULT_1", reason: "Swimmer is 16+." };
 
   const no = (k: keyof LevelState) => state[k] === false;
 
@@ -411,10 +309,10 @@ function computeLevel(state: LevelState): { levelKey?: LevelKey; reason?: string
   if (no("s5_kickFrontBackInd")) return { levelKey: "BEGINNER_2", reason: "Independent kicking is still developing." };
 
   if (no("s6_sixArmStrokesFreeBack")) return { levelKey: "BEGINNER_3", reason: "Arm stroke coordination is still developing." };
-  if (no("s7_freestyleSideBreath12")) return { levelKey: "BEGINNER_3", reason: "Side breathing endurance is still developing." };
+  if (no("s7_freestyleSideBreath12")) return { levelKey: "BEGINNER_3", reason: "Side breathing is still developing." };
 
   if (no("s8_backstroke12")) return { levelKey: "BEGINNER_4", reason: "Backstroke consistency is still developing." };
-  if (no("s9_freeSideBreathAndBack25yd")) return { levelKey: "BEGINNER_4", reason: "25y endurance for freestyle with side breathing + backstroke is still developing." };
+  if (no("s9_freeSideBreathAndBack25yd")) return { levelKey: "BEGINNER_4", reason: "25y endurance is still developing." };
 
   if (no("s10_breastKickPro")) return { levelKey: "INTERMEDIATE_1", reason: "Breaststroke kick is next." };
   if (no("s11_breastAndDolphinPro")) return { levelKey: "INTERMEDIATE_2", reason: "Dolphin kick proficiency is still developing." };
@@ -443,8 +341,8 @@ function Progress({ labels, activeIndex }: { labels: string[]; activeIndex: numb
                 <div
                   className={[
                     "h-10 w-10 rounded-full border-2 flex items-center justify-center text-sm font-bold",
-                    done ? "bg-sky-600 border-sky-600 text-white" : "",
-                    active && !done ? "border-sky-600 text-sky-700 bg-white" : "",
+                    done ? "bg-teal-700 border-teal-700 text-white" : "",
+                    active && !done ? "border-teal-700 text-teal-900 bg-white" : "",
                     !active && !done ? "border-slate-300 text-slate-500 bg-white" : "",
                   ].join(" ")}
                 >
@@ -457,7 +355,7 @@ function Progress({ labels, activeIndex }: { labels: string[]; activeIndex: numb
 
               {i !== labels.length - 1 && (
                 <div className="mx-4 h-[2px] flex-1 bg-slate-200">
-                  <div className="h-[2px] bg-sky-600" style={{ width: done ? "100%" : "0%" }} />
+                  <div className="h-[2px] bg-teal-700" style={{ width: done ? "100%" : "0%" }} />
                 </div>
               )}
             </div>
@@ -476,7 +374,7 @@ function Container({ title, subtitle, children }: { title: string; subtitle: str
         <p className="mt-3 text-lg font-medium text-slate-800">{subtitle}</p>
       </div>
 
-      <div className="mt-8 rounded-2xl border border-white/60 bg-white/90 p-8 sm:p-10 shadow-xl backdrop-blur">
+      <div className="mt-8 rounded-2xl border border-white/40 bg-white/95 p-8 sm:p-10 shadow-lg backdrop-blur">
         {children}
       </div>
     </div>
@@ -489,14 +387,14 @@ function YesNo({ onYes, onNo }: { onYes: () => void; onNo: () => void }) {
       <button
         type="button"
         onClick={onYes}
-        className="h-14 rounded-xl border border-sky-200 bg-white px-4 text-base font-semibold text-slate-900 hover:border-sky-600 hover:bg-sky-50"
+        className="h-14 rounded-xl border border-teal-200 bg-white px-4 text-base font-semibold text-slate-900 hover:border-teal-600 hover:bg-teal-50"
       >
         Yes
       </button>
       <button
         type="button"
         onClick={onNo}
-        className="h-14 rounded-xl border border-sky-200 bg-white px-4 text-base font-semibold text-slate-900 hover:border-sky-600 hover:bg-sky-50"
+        className="h-14 rounded-xl border border-teal-200 bg-white px-4 text-base font-semibold text-slate-900 hover:border-teal-600 hover:bg-teal-50"
       >
         No
       </button>
@@ -512,7 +410,7 @@ function PrimaryButton({ onClick, disabled, label }: { onClick: () => void; disa
       onClick={onClick}
       className={[
         "mt-6 h-14 w-full rounded-xl text-base font-semibold text-white shadow-sm",
-        disabled ? "bg-sky-300 cursor-not-allowed" : "bg-sky-600 hover:bg-sky-700",
+        disabled ? "bg-teal-300 cursor-not-allowed" : "bg-teal-700 hover:bg-teal-800",
       ].join(" ")}
     >
       {label}
@@ -525,7 +423,7 @@ function SecondaryButton({ onClick, label }: { onClick: () => void; label: strin
     <button
       type="button"
       onClick={onClick}
-      className="h-12 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-900 hover:border-sky-600 hover:bg-sky-50"
+      className="h-12 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-900 hover:border-teal-600 hover:bg-teal-50"
     >
       {label}
     </button>
@@ -537,7 +435,7 @@ function OptionButton({ onClick, children }: { onClick: () => void; children: Re
     <button
       type="button"
       onClick={onClick}
-      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-4 text-left text-slate-900 hover:border-sky-600 hover:bg-sky-50"
+      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-4 text-left text-slate-900 hover:border-teal-600 hover:bg-teal-50"
     >
       {children}
     </button>
@@ -557,12 +455,12 @@ function ContactBanner({
 
   const headline =
     variant === "landing"
-      ? "Get your first lesson 100% FREE. No credit card. Zero pressure."
-      : "Nice work. Save your results and we’ll help you pick the best class and instructor.";
+      ? "Get your first lesson 100% FREE—no credit card required and zero obligation."
+      : "Awesome. We’ll use this to match you to the best class and instructor.";
 
   return (
-    <div className="mt-6 rounded-2xl border border-sky-200 bg-sky-50 p-5">
-      <div className="text-sm font-semibold text-sky-900">{contact.brand}</div>
+    <div className="mt-6 rounded-2xl border border-teal-200 bg-teal-50 p-5">
+      <div className="text-sm font-semibold text-teal-900">{contact.brand}</div>
       <div className="mt-1 text-lg font-extrabold text-slate-900">{headline}</div>
       <div className="mt-3 text-slate-900">
         <div>
@@ -604,7 +502,7 @@ function Modal({
         <button
           type="button"
           onClick={onClose}
-          className="mt-6 h-12 w-full rounded-xl bg-sky-600 font-semibold text-white hover:bg-sky-700"
+          className="mt-6 h-12 w-full rounded-xl bg-teal-700 font-semibold text-white hover:bg-teal-800"
         >
           Got it
         </button>
@@ -621,9 +519,7 @@ async function copyTextSmart(text: string) {
       await navigator.clipboard.writeText(text);
       return true;
     }
-  } catch {
-    // fall through
-  }
+  } catch {}
 
   try {
     const ta = document.createElement("textarea");
@@ -658,11 +554,11 @@ export default function Page() {
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
 
-  // Match
+  // Match quiz
   const [matchStep, setMatchStep] = useState(0);
   const [match, setMatch] = useState<MatchState>({});
 
-  // Level
+  // Level finder
   const [level, setLevel] = useState<LevelState>({});
   const [skillIndex, setSkillIndex] = useState(0);
 
@@ -672,13 +568,26 @@ export default function Page() {
   // UI helpers
   const [toast, setToast] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [sending, setSending] = useState(false);
   const [tooYoungOpen, setTooYoungOpen] = useState(false);
 
-  const resultsRef = useRef<HTMLDivElement | null>(null);
+  // auto-send status
+  const [sendStatus, setSendStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
 
-  const matchPick = useMemo(() => pickWinner(match), [match]);
-  const instructorPick = useMemo(() => getInstructorMatchFromWinner(matchPick.winner), [matchPick.winner]);
+  const resultsRef = useRef<HTMLDivElement | null>(null);
+  const autoSendOnceRef = useRef(false);
+
+  const matchPick = useMemo(() => pickParentType(match), [match]);
+  const parentWinner = matchPick.winner;
+
+  const internalCode: InternalCode | null = parentWinner ? parentTypeToInternalCode(parentWinner) : null;
+
+  const instructorPair = useMemo(() => {
+    if (!parentWinner) return null;
+    return mapParentToInstructor(parentWinner);
+  }, [parentWinner]);
+
+  const primaryInstructor = instructorPair ? INSTRUCTOR_DISPLAY[instructorPair.primary] : null;
+  const secondaryInstructor = instructorPair?.secondary ? INSTRUCTOR_DISPLAY[instructorPair.secondary] : null;
 
   const levelPick = useMemo(() => computeLevel(level), [level]);
 
@@ -687,13 +596,6 @@ export default function Page() {
 
   const portalUrl = location ? LOCATION_PORTAL[location] : "";
   const contact = location ? LOCATION_CONTACT[location] : null;
-
-  const birthdayGreeting = useMemo(() => {
-    if (!level.birthday) return null;
-    const dob = new Date(level.birthday + "T00:00:00");
-    const now = new Date();
-    return getBirthdayGreeting(dob, now);
-  }, [level.birthday]);
 
   const landingValid =
     clientName.trim().length > 0 &&
@@ -724,6 +626,9 @@ export default function Page() {
     setComments("");
     setToast(null);
     setTooYoungOpen(false);
+
+    setSendStatus("idle");
+    autoSendOnceRef.current = false;
   };
 
   const answerMatch = (answer: AnswerKey) => {
@@ -791,40 +696,32 @@ export default function Page() {
     setStage("comments");
   };
 
-  function getContactValue() {
-    return contactMethod === "email" ? contactEmail : contactPhone;
-  }
-
   function buildSummaryText() {
     const lines: string[] = [];
     lines.push("Client Intake Summary");
-    lines.push("--------------------------------");
+    lines.push("------------------------------");
     lines.push(`Name: ${clientName || "N/A"}`);
     lines.push(`Location: ${location || "N/A"}`);
     lines.push(`Best day: ${preferredDay || "N/A"}`);
     lines.push(`Best time: ${preferredTime || "N/A"}`);
     lines.push(`Contact method: ${contactMethod || "N/A"}`);
-    lines.push(`Contact: ${getContactValue() || "N/A"}`);
+    lines.push(`Contact: ${contactMethod === "email" ? (contactEmail || "N/A") : (contactPhone || "N/A")}`);
     lines.push("");
 
-    lines.push("Instructor Match (Customer)");
-    lines.push("--------------------------------");
-    if (instructorPick) {
-      lines.push(`Primary: ${instructorPick.primary.name}`);
-      if (instructorPick.alternate) lines.push(`Alternate: ${instructorPick.alternate.name}`);
+    lines.push("Instructor Match (Customer-facing)");
+    lines.push("------------------------------");
+    if (primaryInstructor) {
+      lines.push(`Primary: ${primaryInstructor.title}`);
+      if (secondaryInstructor) lines.push(`Secondary: ${secondaryInstructor.title}`);
     } else {
       lines.push("Not completed");
     }
     lines.push("");
 
-    lines.push("Internal Code (Staff)");
-    lines.push("--------------------------------");
-    if (instructorPick) {
-      const code = instructorPick.internalLetter;
-      const ops = INTERNAL_OPS_COPY[code];
-      lines.push(`Code: ${code}`);
-      lines.push(`Type: ${ops.label}`);
-      lines.push(`Ops: ${ops.ops}`);
+    lines.push("Internal Reference");
+    lines.push("------------------------------");
+    if (internalCode) {
+      lines.push(`Code: ${internalCode}`);
       lines.push(
         `Scores: Goal ${matchPick.scores.supersonic} | Structure ${matchPick.scores.high_maintenance} | Connection ${matchPick.scores.extra_attention} | Value ${matchPick.scores.budget}`
       );
@@ -834,7 +731,7 @@ export default function Page() {
     lines.push("");
 
     lines.push("Level Finder");
-    lines.push("--------------------------------");
+    lines.push("------------------------------");
     if (levelPick.levelKey) {
       const lv = LEVELS[levelPick.levelKey];
       lines.push(`Level: ${lv.title}`);
@@ -847,21 +744,21 @@ export default function Page() {
     if (comments.trim()) {
       lines.push("");
       lines.push("Comments / Concerns");
-      lines.push("--------------------------------");
+      lines.push("------------------------------");
       lines.push(comments.trim());
     }
 
     if (portalUrl) {
       lines.push("");
       lines.push("Enrollment Link");
-      lines.push("--------------------------------");
+      lines.push("------------------------------");
       lines.push(portalUrl);
     }
 
     if (contact) {
       lines.push("");
       lines.push("Location Contact");
-      lines.push("--------------------------------");
+      lines.push("------------------------------");
       lines.push(`${contact.brand} | Phone: ${contact.phone} | Email: ${contact.email}`);
     }
 
@@ -906,77 +803,84 @@ export default function Page() {
     }
   }
 
-  async function sendToTeamEmail() {
-    if (!instructorPick) {
-      setToast("Please complete the match questions first.");
-      setTimeout(() => setToast(null), 2200);
-      return;
-    }
+  // ------------------------------ AUTO SEND ------------------------------
+  function buildSubmitPayload() {
+    return {
+      parentName: clientName || "N/A",
+      location: location || "N/A",
+      preferredDay: preferredDay || "N/A",
+      preferredTime: preferredTime || "N/A",
+      contactMethod: contactMethod || "",
+      contactValue: contactMethod === "email" ? (contactEmail || "N/A") : (contactPhone || "N/A"),
 
-    setSending(true);
-    setToast(null);
+      instructorPrimary: primaryInstructor?.title || "",
+      instructorSecondary: secondaryInstructor?.title || "",
+
+      internalCode: internalCode || "",
+      scoreGoal: matchPick.scores.supersonic,
+      scoreStructure: matchPick.scores.high_maintenance,
+      scoreConnection: matchPick.scores.extra_attention,
+      scoreValue: matchPick.scores.budget,
+
+      levelTitle: levelPick.levelKey ? LEVELS[levelPick.levelKey].title : "",
+      levelRatio: levelPick.levelKey ? LEVELS[levelPick.levelKey].ratio : "",
+      levelReason: levelPick.reason || "",
+
+      comments: comments || "",
+      portalUrl: portalUrl || "",
+    };
+  }
+
+  async function autoSendToTeamOnce() {
+    if (autoSendOnceRef.current) return;
+    autoSendOnceRef.current = true;
+
+    // extra protection against refreshes within same tab session
+    try {
+      const key = `intake_sent_${(clientName || "").trim()}_${(contactMethod === "email" ? contactEmail : contactPhone) || ""}`;
+      const already = sessionStorage.getItem(key);
+      if (already) return;
+      sessionStorage.setItem(key, "1");
+    } catch {}
+
+    setSendStatus("sending");
 
     try {
-      const payload = {
-        parentName: clientName,
-        location,
-        preferredDay,
-        preferredTime,
-        contactMethod,
-        contactValue: getContactValue(),
-
-        // Customer-facing
-        instructorPrimary: instructorPick.primary.name,
-        instructorSecondary: instructorPick.alternate?.name || "",
-
-        // Staff-only
-        internalCode: instructorPick.internalLetter,
-        scoreGoal: matchPick.scores.supersonic,
-        scoreStructure: matchPick.scores.high_maintenance,
-        scoreConnection: matchPick.scores.extra_attention,
-        scoreValue: matchPick.scores.budget,
-
-        // Level
-        levelTitle: levelPick.levelKey ? LEVELS[levelPick.levelKey].title : "",
-        levelRatio: levelPick.levelKey ? LEVELS[levelPick.levelKey].ratio : "",
-        levelReason: levelPick.reason || "",
-
-        comments,
-      };
-
       const res = await fetch("/api/intake-submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(buildSubmitPayload()),
       });
 
       const data = await res.json().catch(() => null);
 
       if (!res.ok || !data?.ok) {
         console.error("Email send failed:", data);
-        setToast("Saved results, but sending failed. Please Save PNG and text it to us.");
-        setTimeout(() => setToast(null), 3500);
+        setSendStatus("failed");
         return;
       }
 
-      setToast("Sent to our team. You’re all set!");
-      setTimeout(() => setToast(null), 2500);
+      setSendStatus("sent");
     } catch (e) {
-      console.error(e);
-      setToast("Send failed. Please Save PNG and text it to us.");
-      setTimeout(() => setToast(null), 3500);
-    } finally {
-      setSending(false);
+      console.error("Email send failed (network):", e);
+      setSendStatus("failed");
     }
   }
 
+  // Trigger auto-send on Results stage
+  useEffect(() => {
+    if (stage !== "results") return;
+    autoSendToTeamOnce();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage]);
+
   return (
     <main className="min-h-screen relative overflow-hidden">
-      {/* Bright, cute, easy-to-read background */}
-      <div className="absolute inset-0 bg-gradient-to-b from-cyan-50 via-sky-100 to-indigo-50" />
-      <div className="absolute -top-48 -left-48 h-[520px] w-[520px] rounded-full bg-sky-200/60 blur-3xl" />
-      <div className="absolute top-24 -right-56 h-[560px] w-[560px] rounded-full bg-cyan-200/40 blur-3xl" />
-      <div className="absolute -bottom-56 left-1/2 h-[560px] w-[560px] -translate-x-1/2 rounded-full bg-indigo-200/40 blur-3xl" />
+      {/* Cute bright background */}
+      <div className="absolute inset-0 bg-gradient-to-b from-cyan-50 via-sky-100 to-teal-100" />
+      <div className="absolute -top-40 -left-40 h-[420px] w-[420px] rounded-full bg-cyan-200/50 blur-3xl" />
+      <div className="absolute top-20 -right-48 h-[520px] w-[520px] rounded-full bg-teal-200/40 blur-3xl" />
+      <div className="absolute -bottom-48 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-sky-200/40 blur-3xl" />
 
       <div className="relative">
         <header className="w-full">
@@ -994,7 +898,7 @@ export default function Page() {
 
         <div className="px-4">
           <p className="mx-auto max-w-5xl text-center font-medium text-slate-900">
-            Answer a few questions to find the best instructor fit and the best swim class level. 🏊
+            Answer a few questions to find the best instructor fit and the best swim class level.
           </p>
         </div>
 
@@ -1002,7 +906,7 @@ export default function Page() {
         {stage === "landing" && (
           <>
             <Progress labels={["Intake", "Match", "Level", "Comments", "Results"]} activeIndex={0} />
-            <Container title="Get Started" subtitle="Quick details first, then we’ll match you.">
+            <Container title="Get Started 🏊‍♂️" subtitle="Tell us a few quick details first.">
               <div className="grid gap-6">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="grid gap-2">
@@ -1011,7 +915,7 @@ export default function Page() {
                       value={clientName}
                       onChange={(e) => setClientName(e.target.value)}
                       placeholder="Example: Khaled A."
-                      className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-sky-600"
+                      className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-teal-700"
                     />
                   </label>
 
@@ -1020,7 +924,7 @@ export default function Page() {
                     <select
                       value={location}
                       onChange={(e) => setLocation(e.target.value as LocationName)}
-                      className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 outline-none focus:border-sky-600"
+                      className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 outline-none focus:border-teal-700"
                     >
                       <option value="">Select a location</option>
                       {LOCATIONS.map((l) => (
@@ -1040,7 +944,7 @@ export default function Page() {
                     <select
                       value={preferredDay}
                       onChange={(e) => setPreferredDay(e.target.value as any)}
-                      className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 outline-none focus:border-sky-600"
+                      className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 outline-none focus:border-teal-700"
                     >
                       <option value="">Select a day</option>
                       {DAYS.map((d) => (
@@ -1056,7 +960,7 @@ export default function Page() {
                     <select
                       value={preferredTime}
                       onChange={(e) => setPreferredTime(e.target.value as any)}
-                      className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 outline-none focus:border-sky-600"
+                      className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 outline-none focus:border-teal-700"
                     >
                       <option value="">Select a time window</option>
                       {TIME_WINDOWS.map((t) => (
@@ -1076,8 +980,8 @@ export default function Page() {
                         className={[
                           "h-12 rounded-xl border px-4 text-sm font-semibold",
                           contactMethod === "phone"
-                            ? "border-sky-600 bg-sky-50 text-slate-900"
-                            : "border-slate-300 bg-white text-slate-900 hover:border-sky-600 hover:bg-sky-50",
+                            ? "border-teal-700 bg-teal-50 text-slate-900"
+                            : "border-slate-300 bg-white text-slate-900 hover:border-teal-700 hover:bg-teal-50",
                         ].join(" ")}
                       >
                         Phone
@@ -1088,8 +992,8 @@ export default function Page() {
                         className={[
                           "h-12 rounded-xl border px-4 text-sm font-semibold",
                           contactMethod === "email"
-                            ? "border-sky-600 bg-sky-50 text-slate-900"
-                            : "border-slate-300 bg-white text-slate-900 hover:border-sky-600 hover:bg-sky-50",
+                            ? "border-teal-700 bg-teal-50 text-slate-900"
+                            : "border-slate-300 bg-white text-slate-900 hover:border-teal-700 hover:bg-teal-50",
                         ].join(" ")}
                       >
                         Email
@@ -1104,7 +1008,7 @@ export default function Page() {
                         value={contactPhone}
                         onChange={(e) => setContactPhone(e.target.value)}
                         placeholder="Example: 201-555-0123"
-                        className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-sky-600"
+                        className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-teal-700"
                       />
                     </label>
                   )}
@@ -1116,7 +1020,7 @@ export default function Page() {
                         value={contactEmail}
                         onChange={(e) => setContactEmail(e.target.value)}
                         placeholder="Example: name@email.com"
-                        className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-sky-600"
+                        className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-teal-700"
                       />
                     </label>
                   )}
@@ -1136,10 +1040,10 @@ export default function Page() {
         {stage === "match" && (
           <>
             <Progress labels={["Intake", "Match", "Level", "Comments", "Results"]} activeIndex={1} />
-            <Container title="Instructor Match" subtitle="4 quick questions. One at a time.">
+            <Container title="Instructor Match" subtitle="Answer 4 quick questions. One at a time.">
               <div className="grid gap-6">
                 <div>
-                  <div className="text-sm font-semibold text-sky-700">
+                  <div className="text-sm font-semibold text-teal-900">
                     Question {matchStep + 1} of {MATCH_QUESTIONS.length}
                   </div>
                   <div className="mt-2 text-2xl font-extrabold text-slate-900">{currentMatchQ.title}</div>
@@ -1148,7 +1052,7 @@ export default function Page() {
                     {currentMatchQ.options.map((o) => (
                       <OptionButton key={o.key} onClick={() => answerMatch(o.key)}>
                         <div className="flex gap-3">
-                          <div className="mt-[2px] inline-flex h-7 w-7 items-center justify-center rounded-full bg-sky-50 text-sm font-bold text-sky-700">
+                          <div className="mt-[2px] inline-flex h-7 w-7 items-center justify-center rounded-full bg-teal-50 text-sm font-bold text-teal-900">
                             {o.key}
                           </div>
                           <div className="text-base font-semibold text-slate-900">{o.text}</div>
@@ -1179,16 +1083,9 @@ export default function Page() {
                   type="date"
                   value={level.birthday ?? ""}
                   onChange={(e) => setLevel((s) => ({ ...s, birthday: e.target.value }))}
-                  className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 outline-none focus:border-sky-600"
+                  className="h-12 rounded-xl border border-slate-300 bg-white px-3 text-slate-900 outline-none focus:border-teal-700"
                 />
               </div>
-
-              {birthdayGreeting && (
-                <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-5">
-                  <div className="text-sm font-semibold text-amber-900">{birthdayGreeting.title}</div>
-                  <div className="mt-2 text-slate-900 font-semibold">{birthdayGreeting.body}</div>
-                </div>
-              )}
 
               {level.birthday && (() => {
                 const dob = new Date(level.birthday + "T00:00:00");
@@ -1200,31 +1097,14 @@ export default function Page() {
                 return (
                   <div className="mt-8 rounded-xl border border-slate-300 bg-white p-5">
                     <div className="text-lg font-extrabold text-slate-900">Will a parent be in the water?</div>
-                    <YesNo
-                      onYes={() => setLevel((s) => ({ ...s, parentInWater: true }))}
-                      onNo={() => setLevel((s) => ({ ...s, parentInWater: false }))}
-                    />
+                    <YesNo onYes={() => setLevel((s) => ({ ...s, parentInWater: true }))} onNo={() => setLevel((s) => ({ ...s, parentInWater: false }))} />
                   </div>
                 );
               })()}
 
               <PrimaryButton
                 label="Continue"
-                disabled={
-                  !level.birthday ||
-                  (() => {
-                    const dob = new Date((level.birthday ?? "") + "T00:00:00");
-                    const now = new Date();
-                    const months = monthsBetween(dob, now);
-
-                    if (months < 4) return false;
-
-                    if (months >= 24 && months <= 36) {
-                      return level.parentInWater !== true && level.parentInWater !== false;
-                    }
-                    return false;
-                  })()
-                }
+                disabled={!level.birthday}
                 onClick={proceedAge}
               />
 
@@ -1241,7 +1121,7 @@ export default function Page() {
           <>
             <Progress labels={["Intake", "Match", "Level", "Comments", "Results"]} activeIndex={2} />
             <Container title="Swim Level Finder" subtitle="Step 2: Skills">
-              <div className="text-sm font-semibold text-sky-700">
+              <div className="text-sm font-semibold text-teal-900">
                 Skills {skillIndex + 1} of {SKILL_QUESTIONS.length}
               </div>
               <div className="mt-3 text-2xl font-extrabold text-slate-900">{currentSkill.text}</div>
@@ -1297,7 +1177,7 @@ export default function Page() {
                   value={comments}
                   onChange={(e) => setComments(e.target.value)}
                   placeholder="Example: nervous around back floats, prefers a calm instructor, goal is water safety before summer, etc."
-                  className="min-h-[140px] w-full rounded-xl border border-slate-300 bg-white p-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-sky-600"
+                  className="min-h-[140px] w-full rounded-xl border border-slate-300 bg-white p-3 text-slate-900 placeholder:text-slate-500 outline-none focus:border-teal-700"
                 />
 
                 <PrimaryButton label="See Results" onClick={() => setStage("results")} />
@@ -1340,13 +1220,14 @@ export default function Page() {
               <div className="text-center">
                 <h1 className="text-4xl font-extrabold tracking-tight text-slate-900">Results</h1>
                 <p className="mt-3 text-lg font-medium text-slate-800">
-                  Save your results as an image (PNG), then text it to us. We’ll help you pick the best class.
+                  Save this as an image (PNG), then text it to us. We’ll help you pick the best class.
                 </p>
               </div>
 
               <ContactBanner location={location} contact={contact} variant="results" />
 
-              <div ref={resultsRef} className="mt-6 rounded-2xl border border-white/60 bg-white p-8 shadow-xl">
+              {/* Export area */}
+              <div ref={resultsRef} className="mt-6 rounded-2xl border border-white/40 bg-white p-8 shadow-lg">
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <div className="text-sm font-semibold text-slate-900">Intake</div>
@@ -1356,7 +1237,8 @@ export default function Page() {
                       <div><span className="font-semibold">Best day:</span> {preferredDay || "N/A"}</div>
                       <div><span className="font-semibold">Best time:</span> {preferredTime || "N/A"}</div>
                       <div>
-                        <span className="font-semibold">Contact:</span> {getContactValue() || "N/A"}
+                        <span className="font-semibold">Contact:</span>{" "}
+                        {contactMethod === "email" ? (contactEmail || "N/A") : (contactPhone || "N/A")}
                       </div>
                     </div>
                   </div>
@@ -1368,7 +1250,7 @@ export default function Page() {
 
                 <div className="mt-6 grid gap-6 md:grid-cols-2">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-                    <div className="text-sm font-semibold text-sky-700">Swim Level Finder</div>
+                    <div className="text-sm font-semibold text-teal-900">Swim Level Finder</div>
                     <div className="mt-2 text-2xl font-extrabold text-slate-900">
                       {levelPick.levelKey ? LEVELS[levelPick.levelKey].title : "Not enough info"}
                     </div>
@@ -1378,7 +1260,7 @@ export default function Page() {
                       </div>
                     )}
                     {levelPick.reason && (
-                      <div className="mt-4 rounded-xl border border-sky-200 bg-white p-4 text-slate-900">
+                      <div className="mt-4 rounded-xl border border-teal-200 bg-white p-4 text-slate-900">
                         <div className="text-sm font-semibold text-slate-900">Why this level</div>
                         <div className="mt-1">{levelPick.reason}</div>
                       </div>
@@ -1389,39 +1271,55 @@ export default function Page() {
                   </div>
 
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6">
-                    <div className="text-sm font-semibold text-sky-700">Instructor Match</div>
+                    <div className="text-sm font-semibold text-teal-900">Instructor Match</div>
 
-                    {instructorPick ? (
+                    {primaryInstructor ? (
                       <>
-                        <div className="mt-2 text-2xl font-extrabold text-slate-900">{instructorPick.primary.name}</div>
-                        <div className="mt-3 text-slate-900">{instructorPick.primary.summary}</div>
+                        <div className="mt-2 text-2xl font-extrabold text-slate-900">
+                          {primaryInstructor.title}
+                        </div>
+                        <div className="mt-3 text-slate-900 font-semibold">{primaryInstructor.vibe}</div>
 
                         <div className="mt-4">
                           <div className="text-sm font-semibold text-slate-900">What you can expect</div>
                           <ul className="mt-2 list-disc space-y-1 pl-5 text-slate-900">
-                            {instructorPick.primary.bullets.map((b) => (
+                            {primaryInstructor.bullets.map((b) => (
                               <li key={b}>{b}</li>
                             ))}
                           </ul>
                         </div>
 
-                        {instructorPick.alternate && (
-                          <div className="mt-5 rounded-xl border border-sky-200 bg-white p-4 text-sm text-slate-900">
-                            <div className="font-semibold">Great alternate option</div>
-                            <div className="mt-1">{instructorPick.alternate.name}</div>
+                        {secondaryInstructor && (
+                          <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4 text-slate-900">
+                            <div className="text-sm font-semibold text-slate-900">Great backup option</div>
+                            <div className="mt-1 font-extrabold">{secondaryInstructor.title}</div>
+                            <div className="mt-2">{secondaryInstructor.vibe}</div>
                           </div>
                         )}
 
-                        {/* Staff-only section: letter + scores only */}
+                        {/* Internal reference (letter + scores only) */}
+                        {internalCode && (
+                          <div className="mt-5 rounded-xl border border-teal-200 bg-white p-4 text-sm text-slate-900">
+                            <div className="font-semibold">Internal Reference</div>
+                            <div className="mt-1">
+                              Code: <span className="font-extrabold">{internalCode}</span>
+                            </div>
+                            <div className="mt-1">
+                              Scores: Goal {matchPick.scores.supersonic} | Structure {matchPick.scores.high_maintenance} | Connection{" "}
+                              {matchPick.scores.extra_attention} | Value {matchPick.scores.budget}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Auto-send indicator */}
                         <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-900">
-                          <div className="font-semibold">Internal Code (Staff)</div>
-                          <div className="mt-1">
-                            Code: <span className="font-bold">{instructorPick.internalLetter}</span>
-                          </div>
-                          <div className="mt-2">
-                            Score: Goal {matchPick.scores.supersonic} | Structure {matchPick.scores.high_maintenance} | Connection{" "}
-                            {matchPick.scores.extra_attention} | Value {matchPick.scores.budget}
-                          </div>
+                          {sendStatus === "sending" && <div><span className="font-semibold">Sending to our team…</span> please wait a second.</div>}
+                          {sendStatus === "sent" && <div className="text-emerald-700 font-semibold">Sent to our team ✅</div>}
+                          {sendStatus === "failed" && (
+                            <div className="text-amber-700 font-semibold">
+                              Saved, but email didn’t send ⚠️ Please still save the PNG and text it to us.
+                            </div>
+                          )}
                         </div>
                       </>
                     ) : (
@@ -1445,10 +1343,14 @@ export default function Page() {
                 )}
 
                 {contact && (
-                  <div className="mt-6 rounded-xl border border-sky-200 bg-sky-50 p-5">
-                    <div className="text-sm font-semibold text-slate-900">Tip</div>
+                  <div className="mt-6 rounded-xl border border-teal-200 bg-teal-50 p-5">
+                    <div className="text-sm font-semibold text-slate-900">Text this PNG to the location team</div>
                     <div className="mt-2 text-slate-900">
-                      Save as PNG, then text the image to us at <span className="font-semibold">{contact.phone}</span>.
+                      <div><span className="font-semibold">Phone:</span> {contact.phone}</div>
+                      <div><span className="font-semibold">Email:</span> {contact.email}</div>
+                    </div>
+                    <div className="mt-3 text-sm font-medium text-slate-900">
+                      Tip: Save as PNG, then text the image to us. We’ll help you pick the best class.
                     </div>
                   </div>
                 )}
@@ -1462,7 +1364,7 @@ export default function Page() {
                   disabled={exporting}
                   className={[
                     "h-12 rounded-xl font-semibold",
-                    exporting ? "bg-sky-300 text-white cursor-not-allowed" : "bg-slate-900 text-white hover:bg-slate-800",
+                    exporting ? "bg-teal-300 text-white cursor-not-allowed" : "bg-slate-900 text-white hover:bg-slate-800",
                   ].join(" ")}
                 >
                   {exporting ? "Saving..." : "Save as Image (PNG)"}
@@ -1471,23 +1373,9 @@ export default function Page() {
                 <button
                   type="button"
                   onClick={copySummary}
-                  className="h-12 rounded-xl border border-slate-300 bg-white font-semibold text-slate-900 hover:border-sky-600 hover:bg-sky-50"
+                  className="h-12 rounded-xl border border-slate-300 bg-white font-semibold text-slate-900 hover:border-teal-700 hover:bg-teal-50"
                 >
                   Copy Summary
-                </button>
-              </div>
-
-              <div className="mt-3">
-                <button
-                  type="button"
-                  onClick={sendToTeamEmail}
-                  disabled={sending}
-                  className={[
-                    "h-12 w-full rounded-xl font-semibold text-white",
-                    sending ? "bg-sky-300 cursor-not-allowed" : "bg-sky-600 hover:bg-sky-700",
-                  ].join(" ")}
-                >
-                  {sending ? "Sending..." : "Send to our team"}
                 </button>
               </div>
 
@@ -1497,7 +1385,7 @@ export default function Page() {
                     href={portalUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-indigo-600 px-4 font-semibold text-white hover:bg-indigo-700"
+                    className="inline-flex h-12 w-full items-center justify-center rounded-xl bg-teal-700 px-4 font-semibold text-white hover:bg-teal-800"
                   >
                     Open Enrollment Link
                   </a>
@@ -1524,21 +1412,6 @@ export default function Page() {
                 />
                 <SecondaryButton onClick={resetAll} label="Start over" />
               </div>
-
-              {/* Back-office key (optional helper text you can remove) */}
-              {instructorPick && (
-                <div className="mt-8 rounded-2xl border border-slate-200 bg-white/80 p-6">
-                  <div className="text-sm font-semibold text-slate-900">Back-office key (for staff)</div>
-                  <div className="mt-2 text-slate-900">
-                    <span className="font-semibold">Code {instructorPick.internalLetter}:</span>{" "}
-                    {INTERNAL_OPS_COPY[instructorPick.internalLetter].label}.{" "}
-                    {INTERNAL_OPS_COPY[instructorPick.internalLetter].ops}
-                  </div>
-                  <div className="mt-3 text-sm text-slate-700">
-                    If you do not want customers seeing this section at all, tell me and I’ll hide it behind a staff-only toggle.
-                  </div>
-                </div>
-              )}
             </div>
           </>
         )}
