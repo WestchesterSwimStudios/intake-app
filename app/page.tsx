@@ -486,7 +486,7 @@ function ContactBanner({
 
   const headline =
     variant === "landing"
-      ? "Free trial available. Call or text us today."
+      ? "Sign up for a FREE no obliagation trial. Call or text us today."
       : "Great job. Let’s get you in for a free, no-obligation trial and put those skills to the test.";
 
   return (
