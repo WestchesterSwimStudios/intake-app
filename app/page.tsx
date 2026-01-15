@@ -535,7 +535,7 @@ function ContactBanner({
 
   const headline =
     variant === "landing"
-      ? "Free trial available. Call or text us today."
+      ? "Get your first lesson 100% FREE—no credit card required and zero obligation."
       : "Great job filling this out. Let’s get you in for a free, no-obligation trial and put those skills to the test.";
 
   return (
